@@ -201,13 +201,21 @@ void main() {
 
     vec3 rough = mix(vec3(0.16, 0.31, 0.11), vec3(0.27, 0.42, 0.15), broad);
     rough = mix(rough, vec3(0.38, 0.40, 0.17), smoothstep(0.58, 0.82, mid) * 0.55);   // dry, yellowed patches
+    // Close up: individual blades (stretched noise at two scales) and speckle, fading before they would shimmer.
+    float near = 1.0 - smoothstep(6.0, 55.0, dist);
+    float blades = vnoise(vec2(vWorld.x * 38.0, vWorld.z * 9.0)) * 0.5 + vnoise(vec2(vWorld.x * 11.0 + 7.0, vWorld.z * 26.0)) * 0.5;
+    float speck = vnoise(vWorld.xz * 95.0);
+    float detail = ((blades - 0.5) * 0.55 + (speck - 0.5) * 0.35) * near;
     rough *= 0.86 + 0.28 * fine;
+    rough *= 1.0 + detail;
+    rough = mix(rough, rough * vec3(1.15, 1.2, 0.7), smoothstep(0.7, 0.95, speck) * near * 0.5);   // pale blade tips
 
     vec3 fairway = mix(vec3(0.29, 0.54, 0.19), vec3(0.37, 0.61, 0.24), broad);
     // Mowing stripes, fading out in the distance where they would alias.
     float stripe = step(0.5, fract(vWorld.z / 6.0));
-    fairway *= 1.0 - 0.075 * stripe * (1.0 - smoothstep(60.0, 160.0, dist));
+    fairway *= 1.0 - 0.11 * stripe * (1.0 - smoothstep(60.0, 160.0, dist));
     fairway *= 0.94 + 0.12 * fine;
+    fairway *= 1.0 + detail * 0.8;
 
     // Putting green around the basket: short, bright, mown in rings.
     float dB = length(vWorld.xz - uBasket.xz);

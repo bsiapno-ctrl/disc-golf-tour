@@ -321,14 +321,14 @@ object Courses {
                     tryAdd(pt.x + right.x * side * off, pt.z + right.z * side * off)
                 }
             }
-            s += 3.2f + rnd.nextFloat() * 3f
+            s += 2.2f + rnd.nextFloat() * 2.4f
         }
         // Deep woods beyond the fairway edge.
-        repeat((shell.length * 0.7f).toInt()) {
+        repeat((shell.length * 2.4f).toInt()) {
             val (pt, dir) = shell.pointAt(rnd.nextFloat() * shell.length)
             val right = Vec3(dir.z, 0f, -dir.x)
             val side = if (rnd.nextBoolean()) 1 else -1
-            val off = width / 2f + 9f + rnd.nextFloat() * 38f
+            val off = width / 2f + 7f + rnd.nextFloat() * rnd.nextFloat() * 70f
             tryAdd(pt.x + right.x * side * off, pt.z + right.z * side * off)
         }
         return trees

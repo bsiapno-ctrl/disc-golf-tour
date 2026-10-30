@@ -311,7 +311,34 @@ class GameRenderer(private val context: android.content.Context, private val ctl
             if (dx * dx + dz * dz > 160f * 160f) continue
             drawModel(d.model, d.x, h.groundAt(d.x, d.z) - 0.02f, d.z, d.scale, d.rot, d.tint, 0.05f)
         }
+        drawNearGrass(h)
         useMainProgram()
+    }
+
+    /** Grass tufts in the rough around the camera: a fixed grid, jittered by a hash, so they never flicker. */
+    private fun drawNearGrass(h: Hole) {
+        val cell = 1.7f
+        val cx = Math.floor((camPos.x / cell).toDouble()).toInt(); val cz = Math.floor((camPos.z / cell).toDouble()).toInt()
+        val fx = camLook.x - camPos.x; val fz = camLook.z - camPos.z
+        val fl = sqrt(fx * fx + fz * fz).coerceAtLeast(0.01f)
+        val r = 10
+        for (ix in cx - r..cx + r) for (iz in cz - r..cz + r) {
+            var k = ix * 73856093 xor iz * 19349663
+            k = k xor (k ushr 13); k *= 1274126177; k = k xor (k ushr 16)
+            if ((k and 0xFF) > 150) continue
+            val x = (ix + ((k shr 8) and 0xFF) / 255f) * cell
+            val z = (iz + ((k shr 16) and 0xFF) / 255f) * cell
+            val dx = x - camPos.x; val dz = z - camPos.z
+            val d2 = dx * dx + dz * dz
+            if (d2 > 17f * 17f || (dx * fx + dz * fz) / fl < -2f) continue
+            if (h.surfaceAt(x, z) == Surface.FAIRWAY || h.surfaceAt(x, z) == Surface.WATER) continue
+            val tx = x - h.tee.x; val tz = z - h.tee.z
+            if (tx * tx + tz * tz < 9f) continue
+            val bx = x - h.basket.x; val bz = z - h.basket.z
+            if (bx * bx + bz * bz < 56f) continue
+            val name = if ((k ushr 24) and 1 == 0) "Grass_Large" else "Grass_Small"
+            drawModel(name, x, h.groundAt(x, z) - 0.02f, z, 1.1f + ((k ushr 4) and 7) * 0.09f, ((k ushr 20) and 0xFF) * 1.4f, 0.9f + ((k ushr 10) and 15) / 60f, 0.03f)
+        }
     }
 
     private fun useMainProgram() {

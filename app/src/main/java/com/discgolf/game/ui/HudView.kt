@@ -44,7 +44,9 @@ class HudView(context: Context, private val ctl: GameController) : View(context)
     private class Pop(val ev: ProgressEvent, var age: Float = 0f)
     private val pops = ArrayList<Pop>()
 
-    private val d = Ui.dp(context, 1f)
+    /** One design unit in pixels. Scaled so the layout (drawn for about 760 x 360 dp) fits whatever screen this is. */
+    private var d = Ui.dp(context, 1f)
+    private val baseDp = Ui.dp(context, 1f)
     private val p = Paint(Paint.ANTI_ALIAS_FLAG)
     private val r = RectF()
     private val r2 = RectF()
@@ -81,6 +83,7 @@ class HudView(context: Context, private val ctl: GameController) : View(context)
 
     override fun onSizeChanged(w: Int, h: Int, ow: Int, oh: Int) {
         val wf = w.toFloat(); val hf = h.toFloat()
+        d = baseDp * min(wf / baseDp / 760f, hf / baseDp / 360f).coerceIn(0.5f, 1.6f)
         actionC[0] = wf - 96 * d; actionC[1] = hf - 100 * d; actionC[2] = 70 * d
         aimL[0] = 52 * d; aimL[1] = hf - 52 * d; aimL[2] = 36 * d
         aimR[0] = 52 * d + 84 * d; aimR[1] = hf - 52 * d; aimR[2] = 36 * d
