@@ -50,6 +50,7 @@ class GameRenderer(private val context: android.content.Context, private val ctl
     private lateinit var modelShader: ModelShader
     private lateinit var skinned: SkinnedGolfer
     private val handDisc = FloatArray(16)
+    private val lastHand = FloatArray(3)
     private lateinit var library: ModelLibrary
     private val decor = HashMap<Hole, List<Decor>>()
 
@@ -472,10 +473,9 @@ class GameRenderer(private val context: android.content.Context, private val ctl
         useMainProgram()
         if (held) {
             val c = ctl.disc.colorRgb
-            ms.load(handDisc).scale(0.115f, 0.03f, 0.115f)
-            drawRgb(meshes.cyl, ms.top, c)
-            ms.load(handDisc).translate(0f, 0.012f, 0f).scale(0.085f, 0.03f, 0.085f)
-            drawRgb(meshes.cyl, ms.top, c, 1.2f)
+            lastHand[0] = handDisc[12]; lastHand[1] = handDisc[13]; lastHand[2] = handDisc[14]
+            ms.load(handDisc).scale(0.105f, 0.105f, 0.105f)
+            drawRgb(meshes.puck, ms.top, c)
         }
         return true
     }
@@ -495,16 +495,18 @@ class GameRenderer(private val context: android.content.Context, private val ctl
         basis[0] = right.x; basis[1] = right.y; basis[2] = right.z
         basis[4] = n.x; basis[5] = n.y; basis[6] = n.z
         basis[8] = fwd.x; basis[9] = fwd.y; basis[10] = fwd.z
-        basis[12] = f.pos.x; basis[13] = f.pos.y + if (flying) 0f else 0.02f; basis[14] = f.pos.z
+        // Hand-off: the disc leaves the fingertips and eases onto the flight path instead of popping.
+        val e = (f.time / 0.12f).coerceIn(0f, 1f).let { it * it * (3f - 2f * it) }
+        basis[12] = lastHand[0] + (f.pos.x - lastHand[0]) * e
+        basis[13] = lastHand[1] + (f.pos.y + (if (flying) 0f else 0.02f) - lastHand[1]) * e
+        basis[14] = lastHand[2] + (f.pos.z - lastHand[2]) * e
         val spin = if (flying) clock * 1700f else 0f
         val disc = ctl.disc
         // Drawn bigger than life so it reads from the chase camera.
         val big = if (flying) 2.6f else 1.6f
         val c = disc.colorRgb
-        ms.load(basis).rotate(spin, 0f, 1f, 0f).translate(0f, -0.02f * big, 0f).scale(0.105f * big, 0.035f * big, 0.105f * big)
-        drawRgb(meshes.cyl, ms.top, c)
-        ms.load(basis).rotate(spin, 0f, 1f, 0f).translate(0f, 0.005f * big, 0f).scale(0.075f * big, 0.04f * big, 0.075f * big)
-        drawRgb(meshes.cyl, ms.top, c, 1.2f)
+        ms.load(basis).rotate(spin, 0f, 1f, 0f).scale(0.105f * big, 0.105f * big, 0.105f * big)
+        drawRgb(meshes.puck, ms.top, c)
     }
 
     // ---- transparent things

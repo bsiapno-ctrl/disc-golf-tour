@@ -104,7 +104,7 @@ class DiscFlight(
         val cl0 = Tuning.cl0Base + Tuning.cl0PerGlide * disc.glide
         var cl = (cl0 + Tuning.clAlpha * alpha) * (1f + 0.10f * (spin01 - 0.5f))
         if (alpha > Tuning.stallAlpha) cl *= max(0f, 1f - (alpha - Tuning.stallAlpha) * 3f)   // stall
-        val cd = Tuning.cd0 + Tuning.cdQuad * (alpha + 0.05f) * (alpha + 0.05f)
+        val cd = Tuning.cd0 * disc.dragScale + Tuning.cdQuad * (alpha + 0.05f) * (alpha + 0.05f)
 
         val q = 0.5f * AIR_DENSITY * speed * speed * AREA
         val liftDir = (n - vHat * n.dot(vHat)).normalized().let { if (it == Vec3.ZERO) n else it }
@@ -201,7 +201,7 @@ object Tuning {
     var cl0Base = 0.08f
     var cl0PerGlide = 0.024f
     var clAlpha = 2.2f
-    var cd0 = 0.05f
+    var cd0 = 0.068f
     var cdQuad = 2.5f
     var kTurn = 0.09f
     var kFade = 0.07f
