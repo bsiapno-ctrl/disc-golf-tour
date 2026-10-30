@@ -18,6 +18,7 @@ fun Painter.drawRgb(mesh: Mesh, m: FloatArray, rgb: Int, shade: Float = 1f, a: F
 class MeshSet {
     val cube = Shapes.cube()
     val cyl = Shapes.cylinder()
+    val puck = Shapes.golfDisc()
     val cone = Shapes.cone()
     val sphere = Shapes.sphere()
     val disc = Shapes.disc()

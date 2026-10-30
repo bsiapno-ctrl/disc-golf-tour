@@ -32,7 +32,10 @@ enum class DiscModel(
     val idealSpeed: Float get() = 9f + speed * 1.55f
 
     /** The hardest this disc can be thrown at all (arm speed cap). */
-    val speedLimit: Float get() = 14f + speed * 1.45f
+    val speedLimit: Float get() = 20f + speed * 0.95f
+
+    /** Drag scale: fast discs have sharp edges and cut through the air, putters are blunt. */
+    val dragScale: Float get() = 1.45f - speed * 0.05f
 
     companion object {
         fun unlockedFor(level: Int): List<DiscModel> = values().filter { it.unlockLevel <= level }
