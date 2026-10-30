@@ -25,17 +25,47 @@ class MenuActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        goImmersive()
     }
 
     override fun onResume() {
         super.onResume()
-        val profile = SaveStore.load(this)
-        if (profile == null && !askedToCreate) {
-            askedToCreate = true
-            startActivity(Intent(this, GolferActivity::class.java))
+        try {
+            val crash = java.io.File(filesDir, App.CRASH_FILE)
+            if (crash.exists()) {
+                showCrash(crash.readText()) { crash.delete(); recreate() }
+                return
+            }
+            val profile = SaveStore.load(this)
+            if (profile == null && !askedToCreate) {
+                askedToCreate = true
+                startActivity(Intent(this, GolferActivity::class.java))
+            }
+            setContentView(buildUi())
+        } catch (t: Throwable) {
+            val sw = java.io.StringWriter()
+            t.printStackTrace(java.io.PrintWriter(sw))
+            showCrash("Menu failed to start:\n\n$sw") { recreate() }
         }
-        setContentView(buildUi())
+    }
+
+    /** Shows a crash report on screen so it can be read and sent back. */
+    private fun showCrash(text: String, onContinue: () -> Unit) {
+        val tv = android.widget.TextView(this).apply {
+            this.text = "The game crashed last time. Please send this text to Claude:\n\n$text"
+            setTextColor(Color.WHITE)
+            textSize = 11f
+            setTextIsSelectable(true)
+            setPadding(24, 24, 24, 24)
+        }
+        val col = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(Color.parseColor("#200000"))
+            addView(android.widget.Button(this@MenuActivity).apply {
+                this.text = "Clear and try again"; setOnClickListener { onContinue() }
+            })
+            addView(android.widget.ScrollView(this@MenuActivity).apply { addView(tv) })
+        }
+        setContentView(col)
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {

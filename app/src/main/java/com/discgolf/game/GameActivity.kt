@@ -67,7 +67,6 @@ class GameActivity : Activity() {
         ctl = GameController(profile)
 
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        goImmersive()
 
         glView = GLSurfaceView(this).apply {
             setEGLContextClientVersion(3)
