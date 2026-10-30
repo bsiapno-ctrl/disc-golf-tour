@@ -257,21 +257,31 @@ class GameRenderer(private val ctl: GameController) : GLSurfaceView.Renderer, Pa
             val shade = 0.80f + ((idx * 37) % 40) / 100f
             val warm = ((idx * 53) % 17) / 100f      // a little hue variety from tree to tree
             val ht = t.height
-            draw(m.cyl, xf(t.x, y0, t.z, t.trunkR, ht * 0.45f, t.trunkR), 0.33f, 0.22f, 0.13f)
+            val cr = t.canopyR
+            draw(m.cyl, xf(t.x, y0 - 0.05f, t.z, t.trunkR * 1.5f, ht * 0.12f, t.trunkR * 1.5f), 0.30f, 0.20f, 0.12f)   // root flare
+            draw(m.cyl, xf(t.x, y0, t.z, t.trunkR, ht * 0.5f, t.trunkR), 0.36f, 0.24f, 0.14f)
             if (t.variant == 0) {
-                for (k in 0 until 4) {
-                    val f = k / 3f
-                    val r = t.canopyR * (1.05f - 0.62f * f)
-                    draw(m.cone, xf(t.x, y0 + ht * (0.22f + 0.17f * k), t.z, r, ht * 0.34f, r, k * 37f),
-                        (0.09f + 0.04f * f + warm * 0.3f) * shade, (0.30f + 0.06f * f) * shade, (0.14f + 0.03f * f) * shade)
+                for (k in 0 until 6) {
+                    val f = k / 5f
+                    val r = cr * (1.12f - 0.80f * f)
+                    val sway = (((idx * 7 + k * 13) % 9) - 4) * 0.02f * cr
+                    draw(m.cone, xf(t.x + sway, y0 + ht * (0.16f + 0.14f * k), t.z - sway, r, ht * 0.30f, r, k * 41f + idx * 13f),
+                        (0.07f + 0.05f * f + warm * 0.25f) * shade, (0.27f + 0.10f * f) * shade, (0.13f + 0.04f * f) * shade)
                 }
             } else {
-                draw(m.sphere, xf(t.x, y0 + ht * 0.66f, t.z, t.canopyR * 0.95f, ht * 0.28f, t.canopyR * 0.95f),
-                    (0.16f + warm) * shade, 0.42f * shade, 0.14f * shade)
-                draw(m.sphere, xf(t.x + t.canopyR * 0.35f, y0 + ht * 0.78f, t.z - t.canopyR * 0.2f, t.canopyR * 0.7f, ht * 0.20f, t.canopyR * 0.7f),
-                    (0.22f + warm) * shade, 0.52f * shade, 0.17f * shade)
-                draw(m.sphere, xf(t.x - t.canopyR * 0.4f, y0 + ht * 0.72f, t.z + t.canopyR * 0.25f, t.canopyR * 0.6f, ht * 0.18f, t.canopyR * 0.6f),
-                    (0.14f + warm) * shade, 0.38f * shade, 0.13f * shade)
+                val blossom = t.variant == 2
+                // Several overlapping puffs: darker underneath, lighter on top, like a painted canopy.
+                val puffs = 6
+                for (k in 0 until puffs) {
+                    val a = k * 2.4f + idx
+                    val ring = if (k == 0) 0f else 0.55f * cr
+                    val px = t.x + cos(a) * ring; val pz = t.z + sin(a) * ring
+                    val py = y0 + ht * (0.58f + 0.07f * (k % 3) + (if (k == 0) 0.10f else 0f))
+                    val rr = cr * (if (k == 0) 0.95f else 0.62f)
+                    val lit = 0.80f + 0.30f * (py - y0) / ht
+                    if (blossom) draw(m.sphere, xf(px, py, pz, rr, rr * 0.8f, rr), (0.96f) * lit * shade.coerceAtMost(1f), 0.62f * lit, 0.74f * lit)
+                    else draw(m.sphere, xf(px, py, pz, rr, rr * 0.8f, rr), (0.14f + warm) * lit * shade, 0.45f * lit * shade, 0.14f * lit * shade)
+                }
             }
         }
     }

@@ -11,7 +11,7 @@ class Tree(
     val height: Float,
     val trunkR: Float,
     val canopyR: Float,
-    /** 0 = pine, 1 = round-leaf. Only affects how it looks. */
+    /** 0 = pine, 1 = round-leaf, 2 = blossom. Only affects how it looks. */
     val variant: Int,
 )
 
@@ -305,7 +305,8 @@ object Courses {
             if (hypot(x - shell.basket.x, z - shell.basket.z) < 5f) return
             if (hypot(x - shell.tee.x, z - shell.tee.z) < 6f) return
             if (shell.distToPath(x, z) < width / 2f + 0.15f) return
-            val variant = if (rnd.nextFloat() < 0.65f) 0 else 1
+            val roll = rnd.nextFloat()
+            val variant = if (roll < 0.60f) 0 else if (roll < 0.94f) 1 else 2
             trees += Tree(x, z, 7f + rnd.nextFloat() * 6.5f, 0.2f + rnd.nextFloat() * 0.14f, 1.7f + rnd.nextFloat() * 1.4f, variant)
         }
 

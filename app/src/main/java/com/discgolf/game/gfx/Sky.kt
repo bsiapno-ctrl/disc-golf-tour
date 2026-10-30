@@ -75,6 +75,26 @@ void main() {
         vec3 cloudCol = mix(vec3(0.78, 0.82, 0.90), vec3(1.0), smoothstep(0.45, 0.85, c));
         col = mix(col, cloudCol, cloud * 0.85);
     }
+    // Distant hills and a tree line, three layers fading into the haze. Only drawn just above the horizon.
+    if (ray.y < 0.30) {
+        float az = atan(ray.x, ray.z);
+        for (int k = 0; k < 3; k++) {
+            float fk = float(k);
+            float base = 0.075 - 0.028 * fk;
+            float amp = 0.075 - 0.030 * fk;
+            float freq = 2.2 + 2.6 * fk;
+            float h = base + amp * (fbm(vec2(az * freq + fk * 9.0, fk * 3.1)) - 0.25);
+            // The nearest layer is a ragged tree line.
+            if (k == 2) h += 0.012 * vnoise(vec2(az * 60.0, 1.7));
+            float edge = smoothstep(h + 0.0015, h - 0.0015, ray.y);
+            vec3 far = mix(vec3(0.52, 0.64, 0.80), horizon, 0.35);
+            vec3 mid = vec3(0.33, 0.50, 0.50);
+            vec3 near = vec3(0.12, 0.31, 0.19);
+            vec3 rc = k == 0 ? far : (k == 1 ? mid : near);
+            float shade = 0.85 + 0.25 * smoothstep(0.0, h, ray.y);   // lighter toward the ridge top
+            col = mix(col, rc * shade, edge * (ray.y > -0.02 ? 1.0 : 0.0));
+        }
+    }
     fragColor = vec4(col, 1.0);
 }
 """
