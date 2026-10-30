@@ -48,6 +48,8 @@ class GameRenderer(private val context: android.content.Context, private val ctl
     private val sun = floatArrayOf(0.45f, 0.80f, 0.40f)
     private lateinit var golfer: GolferModel
     private lateinit var modelShader: ModelShader
+    private lateinit var skinned: SkinnedGolfer
+    private val handDisc = FloatArray(16)
     private lateinit var library: ModelLibrary
     private val decor = HashMap<Hole, List<Decor>>()
 
@@ -96,6 +98,7 @@ class GameRenderer(private val context: android.content.Context, private val ctl
         meshes = MeshSet()
         golfer = GolferModel(meshes)
         modelShader = ModelShader()
+        skinned = SkinnedGolfer(context.applicationContext)
         library = ModelLibrary(context.applicationContext)
         decor.clear()
         lastNanos = System.nanoTime()
@@ -407,6 +410,7 @@ class GameRenderer(private val context: android.content.Context, private val ctl
         val phase = ctl.phase
         val m = ctl.meter
         val fh = ctl.forehand
+        if (drawSkinnedGolfer()) return
         when (phase) {
             Phase.INTRO, Phase.AIMING -> {
                 ThrowAnimation.address(pose, fh, clock)
@@ -439,6 +443,41 @@ class GameRenderer(private val context: android.content.Context, private val ctl
         }
         val hd = Math.toDegrees(golferHeading.toDouble()).toFloat()
         golfer.draw(this, ctl.profile.look, ctl.profile.handedness.sign, at.x, at.y, at.z, hd, pose, holding)
+    }
+
+    /** The rigged, animated golfer. Returns false if it could not be loaded, so the simple golfer is drawn instead. */
+    private fun drawSkinnedGolfer(): Boolean {
+        val look = ctl.profile.look
+        if (!skinned.available(look)) return false
+        val phase = ctl.phase
+        val power = when (phase) {
+            Phase.CHARGING, Phase.ACCURACY, Phase.FLIGHT -> ctl.meter?.power ?: 0f
+            else -> 0f
+        }
+        val swing = when (phase) {
+            Phase.FLIGHT -> max(ctl.swingClock, 0f)
+            Phase.RESULT, Phase.HOLE_DONE, Phase.ROUND_DONE -> 99f
+            else -> -1f
+        }
+        val at = when (phase) {
+            Phase.INTRO, Phase.AIMING, Phase.CHARGING, Phase.ACCURACY -> ctl.lie
+            else -> ctl.throwOrigin
+        }
+        if (phase == Phase.INTRO || phase == Phase.AIMING) golferHeading = ctl.aimHeading
+        if (phase == Phase.CHARGING || phase == Phase.ACCURACY) golferHeading = ctl.aimHeading
+        val hd = Math.toDegrees(golferHeading.toDouble()).toFloat()
+        val tilt = (ctl.releaseTiltDeg * 0.7f).coerceIn(-45f, 45f)
+        val held = skinned.draw(vp, sun, camPos.x, camPos.y, camPos.z, look, ctl.profile.handedness.sign > 0f,
+            at.x, at.y, at.z, hd, ctl.forehand, power, swing, GameController.RELEASE_TIME, tilt, handDisc)
+        useMainProgram()
+        if (held) {
+            val c = ctl.disc.colorRgb
+            ms.load(handDisc).scale(0.115f, 0.03f, 0.115f)
+            drawRgb(meshes.cyl, ms.top, c)
+            ms.load(handDisc).translate(0f, 0.012f, 0f).scale(0.085f, 0.03f, 0.085f)
+            drawRgb(meshes.cyl, ms.top, c, 1.2f)
+        }
+        return true
     }
 
     private val basis = FloatArray(16)
