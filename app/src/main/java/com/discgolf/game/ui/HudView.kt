@@ -14,6 +14,8 @@ import com.discgolf.game.core.ProgressEvent
 import com.discgolf.game.core.Stat
 import com.discgolf.game.core.SwingMeter
 import com.discgolf.game.core.clamp
+import com.discgolf.game.core.Vec3
+import kotlin.math.abs
 import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.max
@@ -235,6 +237,7 @@ class HudView(context: Context, private val ctl: GameController) : View(context)
         drawTopCentre(c, w)
         drawWind(c, w)
         drawMenuButtons(c)
+        drawMinimap(c, h)
 
         if (phase == Phase.AIMING || phase == Phase.CHARGING || phase == Phase.ACCURACY) {
             drawDiscCard(c)
@@ -311,6 +314,79 @@ class HudView(context: Context, private val ctl: GameController) : View(context)
             else -> if (across > 0) "FROM LEFT" else "FROM RIGHT"
         }
         text(c, kind, cx, cy + 70 * d, 11f, Ui.WHITE, Paint.Align.CENTER, display = false)
+    }
+
+
+    private val miniPath = Path()
+    private val miniRect = RectF()
+
+    /** Top-down map of the hole, turned so the basket is "up" from your lie. */
+    private fun drawMinimap(c: Canvas, h: Float) {
+        val hole = ctl.hole
+        val w = width.toFloat()
+        val top = 100 * d
+        val bottom = min(top + 190 * d, actionC[1] - actionC[2] - 10 * d)
+        if (bottom - top < 90 * d) return
+        miniRect.set(w - 12 * d - 112 * d, top, w - 12 * d, bottom)
+        panel(c, miniRect, 200)
+        val lie = ctl.lie
+        val up = (hole.basket - lie).flat().normalized()
+        val ux = up.x; val uz = up.z
+        val rx = uz; val rz = -ux
+        fun uOf(x: Float, z: Float) = (x - lie.x) * ux + (z - lie.z) * uz
+        fun vOf(x: Float, z: Float) = (x - lie.x) * rx + (z - lie.z) * rz
+        var uMin = 0f; var uMax = 1f; var vMax = 10f
+        val pts = ArrayList<Vec3>(hole.path); pts += lie
+        for (q in pts) {
+            uMin = min(uMin, uOf(q.x, q.z)); uMax = max(uMax, uOf(q.x, q.z)); vMax = max(vMax, abs(vOf(q.x, q.z)))
+        }
+        val pad = hole.fairwayWidth * 0.9f + 8f
+        val inner = RectF(miniRect.left + 6 * d, miniRect.top + 6 * d, miniRect.right - 6 * d, miniRect.bottom - 6 * d)
+        val s = min(inner.height() / (uMax - uMin + pad * 2f), inner.width() / (vMax * 2f + pad * 2f))
+        val cx = inner.centerX()
+        val cu = (uMin + uMax) / 2f
+        fun px(x: Float, z: Float) = cx + vOf(x, z) * s
+        fun py(x: Float, z: Float) = inner.centerY() - (uOf(x, z) - cu) * s
+
+        c.save()
+        miniRect.inset(2 * d, 2 * d)
+        path.reset(); path.addRoundRect(miniRect, 10 * d, 10 * d, Path.Direction.CW)
+        c.clipPath(path)
+        miniRect.inset(-2 * d, -2 * d)
+        p.style = Paint.Style.FILL; p.color = Color.rgb(58, 110, 52)
+        c.drawRect(miniRect, p)
+        // fairway ribbon
+        miniPath.reset()
+        hole.path.forEachIndexed { i, q -> if (i == 0) miniPath.moveTo(px(q.x, q.z), py(q.x, q.z)) else miniPath.lineTo(px(q.x, q.z), py(q.x, q.z)) }
+        p.style = Paint.Style.STROKE; p.strokeCap = Paint.Cap.ROUND; p.strokeJoin = Paint.Join.ROUND
+        p.strokeWidth = hole.fairwayWidth * s; p.color = Color.rgb(126, 190, 84)
+        c.drawPath(miniPath, p)
+        p.strokeCap = Paint.Cap.BUTT
+        // water
+        p.style = Paint.Style.FILL; p.color = Color.rgb(70, 160, 220)
+        for (pd in hole.ponds) {
+            path.reset()
+            for (k in 0 until 24) {
+                val a = k / 24f * 6.2832f
+                val x = pd.cx + cos(a) * pd.rx; val z = pd.cz + sin(a) * pd.rz
+                if (k == 0) path.moveTo(px(x, z), py(x, z)) else path.lineTo(px(x, z), py(x, z))
+            }
+            path.close(); c.drawPath(path, p)
+        }
+        // trees as dark dots
+        p.color = Color.argb(200, 24, 70, 34)
+        for (t in hole.trees) { val x = px(t.x, t.z); val y = py(t.x, t.z); if (miniRect.contains(x, y)) c.drawCircle(x, y, max(1.2f * d, t.canopyR * s * 0.6f), p) }
+        // aim line
+        val ax = sin(ctl.aimHeading); val az = cos(ctl.aimHeading)
+        p.style = Paint.Style.STROKE; p.strokeWidth = 1.5f * d; p.color = Ui.GOLD
+        c.drawLine(px(lie.x, lie.z), py(lie.x, lie.z), px(lie.x + ax * 60f, lie.z + az * 60f), py(lie.x + ax * 60f, lie.z + az * 60f), p)
+        // basket and lie
+        p.style = Paint.Style.FILL
+        p.color = Color.WHITE; c.drawCircle(px(hole.basket.x, hole.basket.z), py(hole.basket.x, hole.basket.z), 4.5f * d, p)
+        p.color = Ui.ORANGE; c.drawCircle(px(hole.basket.x, hole.basket.z), py(hole.basket.x, hole.basket.z), 3f * d, p)
+        p.color = Color.WHITE; c.drawCircle(px(lie.x, lie.z), py(lie.x, lie.z), 5f * d, p)
+        p.color = Ui.GOLD; c.drawCircle(px(lie.x, lie.z), py(lie.x, lie.z), 3.5f * d, p)
+        c.restore()
     }
 
     private fun drawMenuButtons(c: Canvas) {
