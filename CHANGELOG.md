@@ -3,6 +3,9 @@
 ## [Unreleased]
 
 ### Added
+- Throwing: forehand throws (mirrored flight), adjustable launch angle and release tilt, new Hyzer flip and Roller shapes, a jointed throwing animation for both backhand and forehand, and the disc now leaves the hand mid-swing.
+- Launch menu scales to any screen size and shape, and rebuilds when the phone is folded or unfolded.
+- Textured glTF trees, bushes, flowers and grass; a minimap; distant hills in the sky.
 - `tools/course-builder.html`: a page you open on a PC to build real courses on satellite imagery (tees, baskets, bends, water, layouts, optional elevation) and export a course file.
 
 ### Added

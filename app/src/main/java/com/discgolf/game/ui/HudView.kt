@@ -60,6 +60,11 @@ class HudView(context: Context, private val ctl: GameController) : View(context)
     private val shapePrev = RectF()
     private val shapeNext = RectF()
     private val menuRect = RectF()
+    private val handBtn = RectF()
+    private val angleMinus = RectF()
+    private val anglePlus = RectF()
+    private val tiltMinus = RectF()
+    private val tiltPlus = RectF()
     private val cardBtn = RectF()
     private val resumeBtn = RectF()
     private val quitBtn = RectF()
@@ -84,6 +89,13 @@ class HudView(context: Context, private val ctl: GameController) : View(context)
         discNext.set(cardRect.right - 40 * d, cardRect.top, cardRect.right, cardRect.bottom - 30 * d)
         shapePrev.set(cardRect.left, cardRect.bottom - 34 * d, cardRect.left + 70 * d, cardRect.bottom)
         shapeNext.set(cardRect.right - 70 * d, cardRect.bottom - 34 * d, cardRect.right, cardRect.bottom)
+        // Throw panel: backhand / forehand, launch angle and release tilt, to the right of the aim buttons.
+        val tx0 = 182 * d; val tx1 = 328 * d; val rowH = 29 * d; val ty = hf - 98 * d
+        handBtn.set(tx0, ty, tx1, ty + rowH)
+        angleMinus.set(tx1 - 96 * d, ty + rowH + 3 * d, tx1 - 68 * d, ty + 2 * rowH)
+        anglePlus.set(tx1 - 28 * d, ty + rowH + 3 * d, tx1, ty + 2 * rowH)
+        tiltMinus.set(tx1 - 96 * d, ty + 2 * rowH + 4 * d, tx1 - 68 * d, ty + 3 * rowH + 1 * d)
+        tiltPlus.set(tx1 - 28 * d, ty + 2 * rowH + 4 * d, tx1, ty + 3 * rowH + 1 * d)
         menuRect.set(wf - 126 * d, 10 * d, wf - 12 * d, 46 * d)
         cardBtn.set(wf - 126 * d, 52 * d, wf - 12 * d, 88 * d)
         resumeBtn.set(wf / 2f - 110 * d, hf / 2f - 18 * d, wf / 2f + 110 * d, hf / 2f + 32 * d)
@@ -140,6 +152,11 @@ class HudView(context: Context, private val ctl: GameController) : View(context)
                     discNext.contains(x, y) -> onDisc(1)
                     shapePrev.contains(x, y) -> onShape(-1)
                     shapeNext.contains(x, y) -> onShape(1)
+                    handBtn.contains(x, y) -> ctl.toggleForehand()
+                    angleMinus.contains(x, y) -> ctl.adjustAngle(-1)
+                    anglePlus.contains(x, y) -> ctl.adjustAngle(1)
+                    tiltMinus.contains(x, y) -> ctl.adjustTilt(-1)
+                    tiltPlus.contains(x, y) -> ctl.adjustTilt(1)
                     x > width * 0.62f && y > height * 0.3f && actionPointer < 0 -> { actionPointer = id; onAction(true) }
                 }
             }
@@ -242,6 +259,7 @@ class HudView(context: Context, private val ctl: GameController) : View(context)
         if (phase == Phase.AIMING || phase == Phase.CHARGING || phase == Phase.ACCURACY) {
             drawDiscCard(c)
             drawAimButtons(c)
+            drawThrowPanel(c)
             drawMeter(c, w, h)
             val label = when (phase) {
                 Phase.AIMING -> "HOLD"
@@ -416,6 +434,36 @@ class HudView(context: Context, private val ctl: GameController) : View(context)
         text(c, ctl.shape.label.uppercase(), cardRect.centerX(), shapePrev.centerY() + 6 * d, 15f, Ui.CYAN, Paint.Align.CENTER)
     }
 
+    private fun drawThrowPanel(c: Canvas) {
+        val live = ctl.phase == Phase.AIMING
+        val a = if (live) 255 else 120
+        // backhand / forehand switch
+        r.set(handBtn)
+        pill(c, r, Color.parseColor(if (ctl.forehand) "#D9792B" else "#3A68B0"), Color.parseColor(if (ctl.forehand) "#8F4A12" else "#14396F"))
+        text(c, if (ctl.forehand) "FOREHAND" else "BACKHAND", r.centerX(), r.centerY() + 5 * d, 14f, Ui.WHITE, Paint.Align.CENTER)
+        // launch angle
+        val labelX = handBtn.left + 6 * d
+        text(c, "ANGLE", labelX, angleMinus.centerY() + 4 * d, 12f, Ui.METAL, display = false)
+        text(c, String.format("%.0f°", ctl.launchAngleDeg), (angleMinus.right + anglePlus.left) / 2f, angleMinus.centerY() + 5 * d, 14f, Ui.WHITE, Paint.Align.CENTER)
+        smallButton(c, angleMinus, "−", a); smallButton(c, anglePlus, "+", a)
+        // release tilt
+        text(c, "TILT", labelX, tiltMinus.centerY() + 4 * d, 12f, Ui.METAL, display = false)
+        val tilt = ctl.releaseTiltDeg
+        val tl = if (tilt > 0.5f) String.format("H%.0f°", tilt) else if (tilt < -0.5f) String.format("A%.0f°", -tilt) else "0°"
+        text(c, tl, (tiltMinus.right + tiltPlus.left) / 2f, tiltMinus.centerY() + 5 * d, 14f, Ui.CYAN, Paint.Align.CENTER)
+        smallButton(c, tiltMinus, "−", a); smallButton(c, tiltPlus, "+", a)
+    }
+
+    private fun smallButton(c: Canvas, rect: RectF, label: String, alpha: Int) {
+        p.style = Paint.Style.FILL
+        p.color = Color.argb(alpha, 20, 57, 111)
+        c.drawRoundRect(rect, 8 * d, 8 * d, p)
+        p.style = Paint.Style.STROKE; p.strokeWidth = 1.5f * d; p.color = Color.argb(alpha, 255, 255, 255)
+        c.drawRoundRect(rect, 8 * d, 8 * d, p)
+        p.style = Paint.Style.FILL
+        text(c, label, rect.centerX(), rect.centerY() + 6 * d, 18f, Ui.WHITE, Paint.Align.CENTER)
+    }
+
     private fun drawAimButtons(c: Canvas) {
         val a = ctl.phase == Phase.AIMING
         roundButton(c, aimL[0], aimL[1], aimL[2], "◀", touchAim < 0, if (a) Ui.METAL else Ui.METAL_DARK)
@@ -425,7 +473,7 @@ class HudView(context: Context, private val ctl: GameController) : View(context)
     private fun drawMeter(c: Canvas, w: Float, h: Float) {
         val phase = ctl.phase
         val m = ctl.meter
-        val left = 270 * d
+        val left = 342 * d
         val right = w - 190 * d
         val bw = right - left
         val power = if (m != null && (phase == Phase.CHARGING || phase == Phase.ACCURACY)) m.power else 0f

@@ -41,10 +41,12 @@ enum class DiscModel(
 }
 
 /** How the player releases the disc. Chosen with up/down on the d-pad before the throw. */
-enum class ShotShape(val label: String, val bankDegrees: Float, val noseDegrees: Float) {
+enum class ShotShape(val label: String, val bankDegrees: Float, val noseDegrees: Float, val elevDegrees: Float = 0f, val rolls: Boolean = false) {
     HYZER("Hyzer", 20f, 0.5f),
+    HYZER_FLIP("Hyzer flip", 32f, 0.5f, 1f),
     FLAT("Flat", 0f, 1f),
-    ANHYZER("Anhyzer", -16f, 1f);
+    ANHYZER("Anhyzer", -16f, 1f),
+    ROLLER("Roller", -14f, -1.5f, -3f, rolls = true);
 
     fun next(): ShotShape = values()[(ordinal + 1) % values().size]
     fun prev(): ShotShape = values()[(ordinal + values().size - 1) % values().size]

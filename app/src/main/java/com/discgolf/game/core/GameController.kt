@@ -55,6 +55,12 @@ class GameController(
     var disc: DiscModel = DiscModel.DART
         private set
     var shape: ShotShape = ShotShape.FLAT
+
+    /** Sidearm throw. Stays on until switched off. */
+    var forehand = false
+    /** Fine tuning of the launch angle and release tilt, in degrees. Reset for each new shot. */
+    var elevOffset = 0f
+    var bankOffset = 0f
         private set
     val bag: List<DiscModel> get() = DiscModel.unlockedFor(profile.level)
 
@@ -131,8 +137,36 @@ class GameController(
     fun nextShape(dir: Int) {
         if (phase != Phase.AIMING) return
         shape = if (dir > 0) shape.next() else shape.prev()
+        bankOffset = 0f
         dirty = true
     }
+
+    fun toggleForehand() {
+        if (phase != Phase.AIMING) return
+        forehand = !forehand
+        dirty = true
+    }
+
+    /** Raise (+1) or lower (-1) the launch angle in 1-degree steps. */
+    fun adjustAngle(dir: Int) {
+        if (phase != Phase.AIMING) return
+        elevOffset = (elevOffset + dir).coerceIn(-6f, 14f)
+        dirty = true
+    }
+
+    /** Tilt the release toward hyzer (+1) or anhyzer (-1) in 2-degree steps. */
+    fun adjustTilt(dir: Int) {
+        if (phase != Phase.AIMING) return
+        bankOffset = (bankOffset + dir * 2f).coerceIn(-16f, 16f)
+        dirty = true
+    }
+
+    /** The launch angle that will be used, in degrees above horizontal, for display. */
+    val launchAngleDeg: Float get() =
+        ((if (isPutt) Tuning.puttElevDeg else Tuning.driveElevDeg) + shape.elevDegrees + elevOffset).coerceIn(Launcher.MIN_ELEV_DEG, Launcher.MAX_ELEV_DEG)
+
+    /** The release tilt that will be used, in degrees (+ hyzer, - anhyzer). */
+    val releaseTiltDeg: Float get() = shape.bankDegrees + bankOffset
 
     /** The action button went down. Starts the power bar, or taps the accuracy marker, or advances a screen. */
     fun pressAction() {
@@ -196,7 +230,7 @@ class GameController(
     // Throwing
     // =====================================================================
 
-    private fun spec() = ThrowSpec(lie, aimHeading, disc, shape, isPutt)
+    private fun spec() = ThrowSpec(lie, aimHeading, disc, shape, isPutt, forehand, elevOffset, bankOffset)
 
     private fun launch(m: SwingMeter) {
         preThrowPin = lie.distanceXZ(hole.basket)
@@ -211,8 +245,13 @@ class GameController(
         setPhase(Phase.FLIGHT)
     }
 
+    /** True once the disc has left the hand. */
+    val released: Boolean get() = swingClock < 0f || swingClock >= RELEASE_TIME
+
     private fun stepFlight(dt: Float) {
         val f = flight ?: return
+        // The disc stays in the hand until the arm has swung through to the release point.
+        if (swingClock in 0f..RELEASE_TIME) return
         accumulator += min(dt, 0.05f)
         var n = 0
         while (accumulator >= Launcher.SIM_DT && n < 12 && !f.isDone) {
@@ -266,7 +305,7 @@ class GameController(
         } else {
             gains += profile.addStatUse(Stat.POWER, distance / 8f * (0.5f + 0.5f * power))
             var spin = 1.5f + (if (perfect) 3f else 0f)
-            if (power > 0.55f && lastThrowDisc.idealSpeed * 0.8f < Launcher.launchSpeed(profile, ThrowSpec(preThrowLie, 0f, lastThrowDisc, shape, false), power, false)) spin += 2f
+            if (power > 0.55f && lastThrowDisc.idealSpeed * 0.8f < Launcher.launchSpeed(profile, ThrowSpec(preThrowLie, 0f, lastThrowDisc, shape, false, forehand), power, false)) spin += 2f
             gains += profile.addStatUse(Stat.SPIN, spin)
             if (preThrowPin <= 45f) {
                 var t = 3f
@@ -369,6 +408,8 @@ class GameController(
         val target = aimTarget()
         aimHeading = dirToHeading((target - lie).flat().normalized())
         shape = ShotShape.FLAT
+        elevOffset = 0f
+        bankOffset = 0f
         val windEnv = WindOnly(wind, hole.terrain)
         val b = bag
         if (distanceToPin <= PUTT_RANGE && DiscModel.DART in b) {
@@ -380,7 +421,7 @@ class GameController(
             var pick: DiscModel? = null
             for (d in b) {
                 if (d == DiscModel.DART) continue
-                val c = Launcher.carry(profile, ThrowSpec(lie, aimHeading, d, ShotShape.FLAT, false), windEnv, 1f)
+                val c = Launcher.carry(profile, ThrowSpec(lie, aimHeading, d, ShotShape.FLAT, false, forehand), windEnv, 1f)
                 if (c > bestCarry) { bestCarry = c; best = d }
                 // Prefer the slowest disc that still gets there.
                 if (c >= want * 1.04f && (pick == null || d.speed < pick.speed)) pick = d
@@ -435,6 +476,9 @@ class GameController(
 
     companion object {
         const val PUTT_RANGE = 20f
+        /** Seconds from the final tap to the disc leaving the hand, and to the end of the follow-through. */
+        const val RELEASE_TIME = 0.26f
+        const val SWING_TIME = 0.70f
         const val TAP_IN_RANGE = 1.0f
 
         fun scoreName(strokes: Int, par: Int): String {

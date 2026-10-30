@@ -379,32 +379,32 @@ class GameRenderer(private val context: android.content.Context, private val ctl
     private fun drawGolfer() {
         val phase = ctl.phase
         val m = ctl.meter
-        val holding = when (phase) {
-            Phase.INTRO, Phase.AIMING, Phase.CHARGING, Phase.ACCURACY -> ctl.disc
-            else -> null
-        }
+        val fh = ctl.forehand
         when (phase) {
             Phase.INTRO, Phase.AIMING -> {
-                pose.armYaw = 22f + sin(clock * 1.6f) * 2f; pose.bodyYaw = 0f; pose.crouch = 0f
+                ThrowAnimation.address(pose, fh, clock)
                 golferHeading = ctl.aimHeading
             }
             Phase.CHARGING, Phase.ACCURACY -> {
-                val p = m?.power ?: 0f
-                pose.armYaw = lerp(30f, 125f, p); pose.bodyYaw = lerp(0f, 38f, p); pose.crouch = p * 0.6f
+                ThrowAnimation.windup(pose, fh, m?.power ?: 0f)
                 golferHeading = ctl.aimHeading
             }
             Phase.FLIGHT -> {
-                val p = m?.power ?: 0f
-                val k = clamp(ctl.swingClock / 0.26f, 0f, 1f)
-                val e = 1f - (1f - k) * (1f - k)
-                pose.armYaw = lerp(lerp(30f, 125f, p), -45f, e)
-                pose.bodyYaw = lerp(lerp(0f, 38f, p), -28f, e)
-                pose.crouch = lerp(p * 0.6f, 0.1f, e)
+                val t = clamp(ctl.swingClock / GameController.SWING_TIME, 0f, 1f)
+                ThrowAnimation.swing(pose, fh, m?.power ?: 0f, t, GameController.RELEASE_TIME / GameController.SWING_TIME)
             }
             Phase.HOLE_DONE -> {
-                pose.armYaw = 165f + sin(clock * 9f) * 8f; pose.bodyYaw = 0f; pose.crouch = 0f
+                ThrowAnimation.address(pose, fh, clock)
+                pose.armYaw = 165f + sin(clock * 9f) * 8f; pose.armPitch = -60f; pose.elbow = 10f
             }
-            else -> { pose.armYaw = -45f; pose.bodyYaw = -28f; pose.crouch = 0.1f }
+            else -> {
+                ThrowAnimation.swing(pose, fh, m?.power ?: 0f, 1f, GameController.RELEASE_TIME / GameController.SWING_TIME)
+            }
+        }
+        pose.discTilt = (ctl.releaseTiltDeg * 0.7f).coerceIn(-45f, 45f)
+        val holding = when (phase) {
+            Phase.INTRO, Phase.AIMING, Phase.CHARGING, Phase.ACCURACY, Phase.FLIGHT -> ctl.disc
+            else -> null
         }
         val at = when (phase) {
             Phase.INTRO, Phase.AIMING, Phase.CHARGING, Phase.ACCURACY -> ctl.lie
@@ -418,7 +418,7 @@ class GameRenderer(private val context: android.content.Context, private val ctl
 
     private fun drawDisc(f: DiscFlight?) {
         if (f == null) return
-        if (ctl.phase == Phase.AIMING || ctl.phase == Phase.CHARGING || ctl.phase == Phase.ACCURACY || ctl.phase == Phase.INTRO) return
+        if (ctl.phase == Phase.AIMING || ctl.phase == Phase.CHARGING || ctl.phase == Phase.ACCURACY || ctl.phase == Phase.INTRO || !ctl.released) return
         val flying = f.state == FlightState.FLYING
         val n = if (flying) f.normal() else Vec3(0f, 1f, 0f)
         var f0 = Vec3(f.vel.x, 0f, f.vel.z).normalized()

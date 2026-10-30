@@ -349,4 +349,37 @@ class CoreTest {
             assertEquals(Surface.OUT_OF_BOUNDS, h.surfaceAt(h.tee.x - (h.basket.x - h.tee.x) * 0.5f, h.tee.z - (h.basket.z - h.tee.z) * 0.5f))
         }
     }
+
+    private fun flyEnd(spec: ThrowSpec, power: Float = 0.8f): Vec3 {
+        val p = PlayerProfile()
+        val f = Launcher.launch(p, spec, EmptyField, power, 0f, false, false)
+        var n = 0
+        while (!f.isDone && n < 20000) { f.step(Launcher.SIM_DT); n++ }
+        return f.pos
+    }
+
+    @Test fun forehandMirrorsTheCurve() {
+        val base = ThrowSpec(Vec3.ZERO, 0f, DiscModel.DART, ShotShape.HYZER, false)
+        val bh = flyEnd(base)
+        val fh = flyEnd(ThrowSpec(Vec3.ZERO, 0f, DiscModel.DART, ShotShape.HYZER, false, forehand = true))
+        assertTrue("backhand hyzer ends left, forehand ends right: ${bh.x} vs ${fh.x}", bh.x * fh.x < 0f)
+    }
+
+    @Test fun launchAngleChangesTheFlight() {
+        val low = flyEnd(ThrowSpec(Vec3.ZERO, 0f, DiscModel.DART, ShotShape.FLAT, false, elevOffsetDeg = -3f))
+        val high = flyEnd(ThrowSpec(Vec3.ZERO, 0f, DiscModel.DART, ShotShape.FLAT, false, elevOffsetDeg = 8f))
+        assertTrue("higher launch should not land at the same place", Math.abs(high.z - low.z) > 2f)
+    }
+
+    @Test fun hyzerAndAnhyzerCurveOppositeWays() {
+        val hy = flyEnd(ThrowSpec(Vec3.ZERO, 0f, DiscModel.DART, ShotShape.HYZER, false))
+        val an = flyEnd(ThrowSpec(Vec3.ZERO, 0f, DiscModel.DART, ShotShape.ANHYZER, false))
+        assertTrue("hyzer ${hy.x}, anhyzer ${an.x}", hy.x * an.x < 0f)
+    }
+
+    @Test fun rollerRollsFarther() {
+        val flat = flyEnd(ThrowSpec(Vec3.ZERO, 0f, DiscModel.DART, ShotShape.FLAT, false), 1f)
+        val roller = flyEnd(ThrowSpec(Vec3.ZERO, 0f, DiscModel.DART, ShotShape.ROLLER, false), 1f)
+        assertTrue("roller z=${roller.z} flat z=${flat.z}", roller.z > flat.z * 0.6f && roller.z > 20f)
+    }
 }
