@@ -55,7 +55,9 @@ app/src/main/java/com/discgolf/game/
     SwingMeter.kt      Hold/release power bar and the accuracy marker
     PlayerProfile.kt   Ratings, XP, levels, appearance, save format
     Discs.kt           Disc models (speed/glide/turn/fade), shot shapes, handedness
-    Course.kt          9 holes, trees, water, the basket's chain catch logic
+    Course.kt          Holes, layouts, trees, water, the basket's chain catch logic, the built-in course
+    Terrain.kt         Height grid, slopes, procedural hills
+    CourseFile.kt      JSON course loader
     GameController.kt  The state machine for a round, scoring and progression
   gfx/           OpenGL ES 3 renderer, procedural meshes, the customizable low-poly golfer
   ui/            HUD (drawn with Canvas), glossy menu styling, golfer portrait
@@ -72,6 +74,12 @@ app/src/test/    JVM unit tests (physics, meter, stats, save format, a full scri
 
 A Bluetooth or USB gamepad works with no setup. Landscape only.
 
+## Courses, terrain and layouts
+
+The built-in course (Maple Ridge) has rolling hills, uphill and downhill holes, and two layouts. Pick the course and
+layout from the main menu. More courses can be added as JSON files; see `docs/COURSE_FORMAT.md`.
+Terrain lives in `core/Terrain.kt`; the ground, sky and lighting are in `gfx/TerrainRender.kt` and `gfx/Sky.kt`.
+
 ## Tuning
 
 All flight constants live in one place: `Tuning` in `core/DiscFlight.kt`. Disc stats are in `Discs.kt`, hole layouts in
@@ -84,5 +92,5 @@ feel have not been run on a device yet, so expect some visual and feel tuning on
 
 ## Ideas for next
 
-Elevation and terrain, more courses, tournament mode with computer opponents, forehand throws, disc wear, sound and music,
+More courses, tournament mode with computer opponents, forehand throws, disc wear, sound and music,
 an unlockable gear shop, and a replay camera.

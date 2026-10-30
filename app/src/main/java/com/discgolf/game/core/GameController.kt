@@ -225,7 +225,7 @@ class GameController(
 
     private fun finishThrow(f: DiscFlight) {
         val m = meter
-        val end = Vec3(f.pos.x, 0f, f.pos.z)
+        val end = hole.onGround(f.pos.x, f.pos.z)
         val surface = hole.surfaceAt(end.x, end.z)
         val splash = FlightEvent.SPLASH in f.events || surface == Surface.WATER
         val oob = surface == Surface.OUT_OF_BOUNDS
@@ -369,7 +369,7 @@ class GameController(
         val target = aimTarget()
         aimHeading = dirToHeading((target - lie).flat().normalized())
         shape = ShotShape.FLAT
-        val windEnv = WindOnly(wind)
+        val windEnv = WindOnly(wind, hole.terrain)
         val b = bag
         if (distanceToPin <= PUTT_RANGE && DiscModel.DART in b) {
             disc = DiscModel.DART
@@ -397,7 +397,7 @@ class GameController(
         dirty = false
         distanceToPin = lie.distanceXZ(hole.basket)
         isPutt = disc == DiscModel.DART && distanceToPin <= PUTT_RANGE
-        val windEnv = WindOnly(wind)
+        val windEnv = WindOnly(wind, hole.terrain)
         // The guide aims for the pin when it is the target; otherwise it shows the line at the power
         // needed to reach the aim spot.
         val toPin = (hole.basket - lie).flat().normalized()

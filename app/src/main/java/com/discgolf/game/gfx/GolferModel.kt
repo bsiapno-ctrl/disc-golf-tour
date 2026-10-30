@@ -41,10 +41,10 @@ class Pose(
 class GolferModel(private val ms0: MeshSet) {
     private val ms = MatStack()
 
-    /** [x],[z] feet position; [headingDeg] is the direction the golfer faces; [hand] is +1 right-handed, -1 left-handed. */
+    /** [x],[y],[z] feet position; [headingDeg] is the direction the golfer faces; [hand] is +1 right-handed, -1 left-handed. */
     fun draw(
         p: Painter, look: Appearance, hand: Float,
-        x: Float, z: Float, headingDeg: Float, pose: Pose, holding: DiscModel?,
+        x: Float, y: Float, z: Float, headingDeg: Float, pose: Pose, holding: DiscModel?,
     ) {
         val skin = Appearance.SKIN[look.skinTone.coerceIn(0, Appearance.SKIN_COUNT - 1)]
         val hair = Appearance.HAIR[look.hairColor.coerceIn(0, Appearance.HAIR_COLOR_COUNT - 1)]
@@ -53,7 +53,7 @@ class GolferModel(private val ms0: MeshSet) {
         val w = when (look.build) { 0 -> 0.9f; 2 -> 1.15f; else -> 1f }
         val m = ms0
 
-        ms.identity().translate(x, 0f, z).rotate(headingDeg, 0f, 1f, 0f)
+        ms.identity().translate(x, y, z).rotate(headingDeg, 0f, 1f, 0f)
         if (hand < 0f) ms.scale(-1f, 1f, 1f)
         val drop = -0.10f * pose.crouch
         ms.translate(0f, drop, 0f)

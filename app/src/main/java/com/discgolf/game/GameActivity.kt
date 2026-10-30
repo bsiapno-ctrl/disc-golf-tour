@@ -64,7 +64,7 @@ class GameActivity : Activity() {
         val saved = SaveStore.load(this)
         if (saved == null) { finish(); return }
         profile = saved
-        ctl = GameController(profile)
+        ctl = GameController(profile, CourseLibrary.selected(this).second.holes)
 
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
 

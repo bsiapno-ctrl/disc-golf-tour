@@ -488,7 +488,8 @@ class HudView(context: Context, private val ctl: GameController) : View(context)
     private fun drawScorecard(c: Canvas, w: Float, h: Float, final: Boolean) {
         val course = ctl.course
         val n = course.size
-        val cw = 52 * d
+        // Long layouts (18 holes) shrink the columns to fit the screen.
+        val cw = minOf(52 * d, (w * 0.96f - 98 * d) / (n + 1))
         val pw = 14 * d * 2 + 70 * d + cw * (n + 1)
         val ph = if (final) 250 * d else 170 * d
         r.set(w / 2f - pw / 2f, h / 2f - ph / 2f - (if (final) 30 * d else 0f), w / 2f + pw / 2f, h / 2f + ph / 2f - (if (final) 30 * d else 0f))

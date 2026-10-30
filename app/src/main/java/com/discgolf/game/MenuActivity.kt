@@ -127,7 +127,10 @@ class MenuActivity : Activity() {
         fun add(v: View) = right.addView(v, LinearLayout.LayoutParams(bw, -2).apply { topMargin = Ui.dpi(this@MenuActivity, 10f) })
 
         if (profile != null) {
+            val (course, layout) = CourseLibrary.selected(this)
             add(Ui.button(this, "Play round", true) { startActivity(Intent(this, GameActivity::class.java)) })
+            add(Ui.button(this, "Course: ${course.name}", false) { showCoursePicker() }.apply { setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 15f) })
+            add(Ui.label(this, "${layout.name.uppercase()}  ·  ${layout.holes.size} HOLES  ·  PAR ${layout.par}  ·  ${layout.length.toInt()} M", 12f, Ui.METAL).apply { gravity = Gravity.CENTER })
             add(Ui.button(this, "My golfer", false) { startActivity(Intent(this, GolferActivity::class.java)) })
         } else {
             add(Ui.button(this, "Create golfer", true) { startActivity(Intent(this, GolferActivity::class.java)) })
@@ -135,6 +138,32 @@ class MenuActivity : Activity() {
         add(Ui.button(this, "How to play", false) { showHelp() })
         row.addView(right)
         return root
+    }
+
+    private fun showCoursePicker() {
+        val loaded = CourseLibrary.load(this, force = true)
+        val choices = ArrayList<Pair<com.discgolf.game.core.Course, com.discgolf.game.core.Layout>>()
+        for (c in loaded.courses) for (l in c.layouts) choices += c to l
+        val labels = choices.map { (c, l) -> "${c.name}  ·  ${l.name}\n${l.holes.size} holes, par ${l.par}, ${l.length.toInt()} m" }.toMutableList()
+        labels += "Add your own courses…"
+        AlertDialog.Builder(this)
+            .setTitle("Choose a course")
+            .setItems(labels.toTypedArray()) { _, i ->
+                if (i < choices.size) {
+                    SaveStore.saveCourseChoice(this, choices[i].first.id, choices[i].second.name)
+                    setContentView(buildUi())
+                } else showCourseHelp(loaded.problems)
+            }
+            .setNegativeButton("Close", null)
+            .show()
+    }
+
+    private fun showCourseHelp(problems: List<String>) {
+        val dir = CourseLibrary.userDir(this)?.absolutePath ?: "(not available on this device)"
+        val msg = "Copy a course file (.json) into this folder on the phone, then open this list again:\n\n$dir\n" +
+            "\nCourses made with the import tool (tools/import_course.py) work as they are." +
+            (if (problems.isEmpty()) "" else "\n\nSome files could not be loaded:\n" + problems.joinToString("\n") { "• $it" })
+        AlertDialog.Builder(this).setTitle("Your courses").setMessage(msg).setPositiveButton("OK", null).show()
     }
 
     private fun showHelp() {

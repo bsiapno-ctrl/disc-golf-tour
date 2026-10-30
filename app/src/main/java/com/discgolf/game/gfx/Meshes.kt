@@ -12,9 +12,9 @@ import kotlin.math.sqrt
 class Mesh(vertices: FloatArray, indices: ShortArray) {
     private val vao: Int
     private val count = indices.size
+    private val ids = IntArray(3)
 
     init {
-        val ids = IntArray(3)
         GLES30.glGenVertexArrays(1, ids, 0)
         GLES30.glGenBuffers(2, ids, 1)
         vao = ids[0]
@@ -40,6 +40,12 @@ class Mesh(vertices: FloatArray, indices: ShortArray) {
     fun draw() {
         GLES30.glBindVertexArray(vao)
         GLES30.glDrawElements(GLES30.GL_TRIANGLES, count, GLES30.GL_UNSIGNED_SHORT, 0)
+    }
+
+    /** Free the GPU buffers. The mesh must not be drawn afterwards. */
+    fun release() {
+        GLES30.glDeleteBuffers(2, ids, 1)
+        GLES30.glDeleteVertexArrays(1, ids, 0)
     }
 }
 

@@ -15,6 +15,10 @@ interface FlightEnvironment {
     fun frictionAt(p: Vec3): Float
     /** Let the world poke the disc: trees, chains, water. May change velocity, state, or flags. */
     fun resolve(flight: DiscFlight)
+    /** Ground height at this spot. Flat unless the course has terrain. */
+    fun groundAt(x: Float, z: Float): Float = 0f
+    /** Ground slope as (dh/dx, 0, dh/dz). */
+    fun gradientAt(x: Float, z: Float): Vec3 = Vec3.ZERO
 }
 
 enum class FlightState { FLYING, ROLLING, STOPPED, HOLED }
@@ -120,11 +124,11 @@ class DiscFlight(
 
         env.resolve(this)
         if (isDone) return
-        if (pos.y <= GROUND) land()
+        if (pos.y <= env.groundAt(pos.x, pos.z) + GROUND) land()
     }
 
     private fun land() {
-        pos = Vec3(pos.x, GROUND, pos.z)
+        pos = Vec3(pos.x, env.groundAt(pos.x, pos.z) + GROUND, pos.z)
         if (landing == null) landing = pos
         airDistance = pos.distanceXZ(start)
         events += FlightEvent.LANDED
@@ -147,11 +151,20 @@ class DiscFlight(
     private fun roll(dt: Float) {
         val f = env.frictionAt(pos)
         rollSpeed -= rollDecel * f * dt
-        if (rollSpeed <= 0.25f) { state = FlightState.STOPPED; vel = Vec3.ZERO; return }
         if (rollSpeed > 0.8f) heading += rollDrift * dt
+        var v = headingToDir(heading) * max(rollSpeed, 0f)
+        // Gravity along the slope. Discs slide and roll rather than drop, so only part of it counts.
+        val g = env.gradientAt(pos.x, pos.z)
+        v = v - g * (G * SLOPE_PULL * dt)
+        val sp = v.lengthXZ()
+        val pull = G * SLOPE_PULL * g.lengthXZ()
+        // At rest unless the hill is steeper than friction can hold.
+        if (sp <= 0.25f && pull < rollDecel * f * 0.8f) { state = FlightState.STOPPED; vel = Vec3.ZERO; return }
+        rollSpeed = sp
+        if (sp > 0.05f) heading = dirToHeading(v)
         vel = headingToDir(heading) * rollSpeed
         pos = pos + vel * dt
-        pos = Vec3(pos.x, GROUND, pos.z)
+        pos = Vec3(pos.x, env.groundAt(pos.x, pos.z) + GROUND, pos.z)
         env.resolve(this)
     }
 
@@ -173,6 +186,8 @@ class DiscFlight(
         const val AREA = 0.0352f
         const val G = 9.81f
         const val GROUND = 0.03f
+        /** Share of gravity along a slope that acts on a rolling disc. */
+        const val SLOPE_PULL = 0.45f
         const val MAX_TIME = 40f
         const val RELEASE_HEIGHT = 1.30f
     }
@@ -257,7 +272,7 @@ object Launcher {
 
         val speed = launchSpeed(p, spec, power, perfect)
         val dir = Vec3(sin(heading) * cos(elev), sin(elev), cos(heading) * cos(elev))
-        val start = Vec3(spec.origin.x, DiscFlight.RELEASE_HEIGHT, spec.origin.z)
+        val start = Vec3(spec.origin.x, spec.origin.y + DiscFlight.RELEASE_HEIGHT, spec.origin.z)
         return DiscFlight(spec.disc, p.handedness.sign, p.pct(Stat.SPIN), start, dir * speed, bank, nose, env)
     }
 
