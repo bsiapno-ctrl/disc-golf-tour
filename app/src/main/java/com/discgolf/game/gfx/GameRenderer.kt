@@ -8,6 +8,7 @@ import com.discgolf.game.core.FlightState
 import com.discgolf.game.core.GameController
 import com.discgolf.game.core.Hole
 import com.discgolf.game.core.Phase
+import com.discgolf.game.core.Surface
 import com.discgolf.game.core.Vec3
 import com.discgolf.game.core.clamp
 import com.discgolf.game.core.headingToDir
@@ -27,7 +28,7 @@ import kotlin.math.sin
  * Draws the course, the golfer and the disc. It only ever reads from [GameController]; all game logic
  * lives in the controller, which the activity updates once per frame.
  */
-class GameRenderer(private val ctl: GameController) : GLSurfaceView.Renderer, Painter {
+class GameRenderer(private val context: android.content.Context, private val ctl: GameController) : GLSurfaceView.Renderer, Painter {
 
     private var prog = 0
     private var uMvp = 0
@@ -46,6 +47,9 @@ class GameRenderer(private val ctl: GameController) : GLSurfaceView.Renderer, Pa
     private val invVp = FloatArray(16)
     private val sun = floatArrayOf(0.45f, 0.80f, 0.40f)
     private lateinit var golfer: GolferModel
+    private lateinit var modelShader: ModelShader
+    private lateinit var library: ModelLibrary
+    private val decor = HashMap<Hole, List<Decor>>()
 
     private val proj = FloatArray(16)
     private val view = FloatArray(16)
@@ -91,6 +95,9 @@ class GameRenderer(private val ctl: GameController) : GLSurfaceView.Renderer, Pa
         terrainShader = TerrainShader()
         meshes = MeshSet()
         golfer = GolferModel(meshes)
+        modelShader = ModelShader()
+        library = ModelLibrary(context.applicationContext)
+        decor.clear()
         lastNanos = System.nanoTime()
     }
 
@@ -134,10 +141,10 @@ class GameRenderer(private val ctl: GameController) : GLSurfaceView.Renderer, Pa
 
         // ---- opaque pass
         drawGround(hole)
-        drawTrees(hole)
         drawBasket(hole)
         drawGolfer()
         drawDisc(flight)
+        drawScenery(hole)
 
         // ---- transparent pass
         GLES30.glEnable(GLES30.GL_BLEND)
@@ -248,11 +255,75 @@ class GameRenderer(private val ctl: GameController) : GLSurfaceView.Renderer, Pa
         draw(meshes.cube, xf(h.tee.x, h.tee.y + 0.02f, h.tee.z, 2.4f, 0.04f, 5f, dir0), 0.30f, 0.32f, 0.36f)
     }
 
-    private fun drawTrees(h: Hole) {
-        val m = meshes
+
+    private class Decor(val model: String, val x: Float, val z: Float, val scale: Float, val rot: Float, val tint: Float)
+
+    private val treeModels = arrayOf(
+        "MapleTree_1", "MapleTree_2", "MapleTree_3", "MapleTree_4", "MapleTree_5",
+        "BirchTree_1", "BirchTree_2", "BirchTree_3", "BirchTree_4", "BirchTree_5")
+
+    /** Bushes, flower clumps and grass tufts along the edges of the hole, chosen once per hole. */
+    private fun decorFor(h: Hole): List<Decor> = decor.getOrPut(h) {
+        val rnd = java.util.Random(900L + h.number * 77L)
+        val out = ArrayList<Decor>()
+        val bushes = arrayOf("Bush", "Bush_Large", "Bush_Flowers", "Bush_Large_Flowers")
+        val flowers = arrayOf("Flower_1_Clump", "Flower_2_Clump", "Flower_3_Clump", "Flower_4_Clump", "Flower_5_Clump")
+        val n = (h.length / 3.2f).toInt().coerceIn(40, 260)
+        for (i in 0 until n) {
+            val (p, d) = h.pointAt(rnd.nextFloat() * h.length)
+            val side = if (rnd.nextBoolean()) 1f else -1f
+            val off = h.fairwayWidth * 0.5f + 1.5f + rnd.nextFloat() * 9f
+            val x = p.x + d.z * off * side; val z = p.z - d.x * off * side
+            if (h.surfaceAt(x, z) == Surface.WATER) continue
+            if (h.trees.any { val dx = it.x - x; val dz = it.z - z; dx * dx + dz * dz < it.trunkR * it.trunkR * 9f }) continue
+            val r = rnd.nextFloat()
+            val model = if (r < 0.45f) bushes[rnd.nextInt(bushes.size)] else if (r < 0.80f) flowers[rnd.nextInt(flowers.size)] else if (r < 0.9f) "Grass_Large" else "Grass_Small"
+            out += Decor(model, x, z, 0.9f + rnd.nextFloat() * 0.9f, rnd.nextFloat() * 360f, 0.85f + rnd.nextFloat() * 0.3f)
+        }
+        out
+    }
+
+    private fun drawModel(name: String, x: Float, y: Float, z: Float, scale: Float, rotY: Float, tint: Float, sway: Float) {
+        val model = library.get(name) ?: return
+        ms.identity().translate(x, y, z).rotate(rotY, 0f, 1f, 0f).scale(scale, scale, scale)
+        val m = ms.top
+        Matrix.multiplyMM(mvp, 0, vp, 0, m, 0)
+        modelShader.draw(model, mvp, m, tint, tint, tint, sway)
+    }
+
+    private fun drawScenery(h: Hole) {
+        GLES30.glDisable(GLES30.GL_BLEND)
+        modelShader.begin(sun, camPos.x, camPos.y, camPos.z, clock)
+        // Trees: the game rules know each tree's height and spread, so the picture is scaled to match.
         for ((idx, t) in h.trees.withIndex()) {
             val dx = t.x - camPos.x; val dz = t.z - camPos.z
             if (dx * dx + dz * dz > 380f * 380f) continue
+            val name = treeModels[(idx * 7 + t.variant * 3) % treeModels.size]
+            val model = library.get(name)
+            val y0 = h.groundAt(t.x, t.z) - 0.1f
+            val tint = 0.88f + ((idx * 37) % 30) / 100f
+            if (model == null) { useMainProgram(); drawProceduralTree(h, idx, t); modelShader.begin(sun, camPos.x, camPos.y, camPos.z, clock); continue }
+            val scale = t.height / model.height * 1.25f
+            drawModel(name, t.x, y0, t.z, scale, (idx * 83 % 360).toFloat(), tint, 0.25f * scale)
+        }
+        for (d in decorFor(h)) {
+            val dx = d.x - camPos.x; val dz = d.z - camPos.z
+            if (dx * dx + dz * dz > 160f * 160f) continue
+            drawModel(d.model, d.x, h.groundAt(d.x, d.z) - 0.02f, d.z, d.scale, d.rot, d.tint, 0.05f)
+        }
+        useMainProgram()
+    }
+
+    private fun useMainProgram() {
+        GLES30.glUseProgram(prog)
+        GLES30.glUniform3f(uLight, sun[0], sun[1], sun[2])
+        GLES30.glUniform3f(uCam, camPos.x, camPos.y, camPos.z)
+        GLES30.glUniform3f(uFog, HORIZON_R, HORIZON_G, HORIZON_B)
+    }
+
+    private fun drawProceduralTree(h: Hole, idx: Int, t: com.discgolf.game.core.Tree) {
+        val m = meshes
+        run {
             val y0 = h.groundAt(t.x, t.z) - 0.15f   // sunk a little so trunks never float on a slope
             val shade = 0.80f + ((idx * 37) % 40) / 100f
             val warm = ((idx * 53) % 17) / 100f      // a little hue variety from tree to tree
