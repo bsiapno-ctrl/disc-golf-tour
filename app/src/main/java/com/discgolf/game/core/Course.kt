@@ -80,7 +80,8 @@ class Hole(
     fun surfaceAt(x: Float, z: Float): Surface {
         for (p in ponds) if (p.contains(x, z)) return Surface.WATER
         val (d, s) = project(x, z)
-        if (d > 62f || (s <= 0.01f && z < tee.z - 18f)) return Surface.OUT_OF_BOUNDS
+        // Far from the line, or well behind the tee in whatever direction the hole points.
+        if (d > 62f || (s <= 0.01f && d > 18f)) return Surface.OUT_OF_BOUNDS
         return if (d <= fairwayWidth / 2f) Surface.FAIRWAY else Surface.ROUGH
     }
 

@@ -3,6 +3,9 @@
 ## [Unreleased]
 
 ### Added
+- `tools/course-builder.html`: a page you open on a PC to build real courses on satellite imagery (tees, baskets, bends, water, layouts, optional elevation) and export a course file.
+
+### Added
 - Terrain: real elevation. Holes climb, drop and roll. Discs gain or lose distance on slopes and roll downhill.
 - Ground rendering: grass and rough with noise, mowing stripes, a ringed putting green, banks and mud, shaped ponds.
 - Sky with sun glow and clouds, haze that matches the horizon, varied trees that sit on the slope, shadows that follow the ground.

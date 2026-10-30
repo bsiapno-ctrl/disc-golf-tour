@@ -338,4 +338,15 @@ class CoreTest {
         assertTrue(g.finished)
         assertTrue(g.card.all { it in 1..10 })
     }
+
+    @Test fun holesMayPointInAnyDirection() {
+        val json = """{"name":"T","holes":[{"number":1,"tees":{"A":[0,0]},"baskets":{"A":[0,-100]}},
+            {"number":2,"tees":{"A":[0,0]},"baskets":{"A":[-100,0]}}]}"""
+        val c = CourseFile.parse(json)
+        for (h in c.layouts[0].holes) {
+            val (mid, _) = h.pointAt(h.length / 2f)
+            assertEquals(Surface.FAIRWAY, h.surfaceAt(mid.x, mid.z))
+            assertEquals(Surface.OUT_OF_BOUNDS, h.surfaceAt(h.tee.x - (h.basket.x - h.tee.x) * 0.5f, h.tee.z - (h.basket.z - h.tee.z) * 0.5f))
+        }
+    }
 }

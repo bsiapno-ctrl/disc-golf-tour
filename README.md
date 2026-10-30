@@ -94,3 +94,7 @@ feel have not been run on a device yet, so expect some visual and feel tuning on
 
 More courses, tournament mode with computer opponents, forehand throws, disc wear, sound and music,
 an unlockable gear shop, and a replay camera.
+
+## Building a real course
+
+Open `tools/course-builder.html` in a browser on your PC (needs internet for the map). Pick a hole, use Tee / Basket / Bend / Water to click positions on the satellite view, set layouts in the table, then **Download course file**. Put the `.json` in `app/src/main/assets/courses/` or the phone's `Android/data/<app>/files/courses/` folder. Elevation lookup is optional and flat ground is used if it fails.
