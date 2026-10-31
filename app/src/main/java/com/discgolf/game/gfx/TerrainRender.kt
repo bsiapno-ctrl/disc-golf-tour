@@ -224,6 +224,9 @@ void main() {
 
     vec3 col = mix(rough, fairway, fair);
     col = mix(col, greenCol, green);
+    // Lighter fringe where the fairway meets the rough, like a mown collar.
+    float edge = smoothstep(0.30, 0.50, map.r) * (1.0 - smoothstep(0.50, 0.72, map.r));
+    col = mix(col, col * vec3(1.10, 1.08, 0.92), edge * 0.8);
     col = mix(col, col * vec3(0.84, 0.84, 0.70), oob * 0.55);                // out of bounds is scruffier
 
     // Steep banks show earth through the grass; ponds are muddy.
@@ -236,6 +239,8 @@ void main() {
     vec3 amb = mix(vec3(0.46, 0.50, 0.34), vec3(0.78, 0.86, 1.0), n.y * 0.5 + 0.5) * 0.70;
     vec3 lit = col * (amb + vec3(1.0, 0.95, 0.84) * diff * 0.62);
 
+    float lum = dot(lit, vec3(0.3, 0.59, 0.11));
+    lit = mix(vec3(lum), lit, 1.08);   // a little extra saturation
     float fog = smoothstep($FOG_START, $FOG_END, dist);
     fragColor = vec4(mix(lit, vec3($HORIZON_R, $HORIZON_G, $HORIZON_B), fog), 1.0);
 }

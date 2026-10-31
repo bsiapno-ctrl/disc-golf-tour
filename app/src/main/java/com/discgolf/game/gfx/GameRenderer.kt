@@ -272,7 +272,7 @@ class GameRenderer(private val context: android.content.Context, private val ctl
         val out = ArrayList<Decor>()
         val bushes = arrayOf("Bush", "Bush_Large", "Bush_Flowers", "Bush_Large_Flowers")
         val flowers = arrayOf("Flower_1_Clump", "Flower_2_Clump", "Flower_3_Clump", "Flower_4_Clump", "Flower_5_Clump")
-        val n = (h.length / 3.2f).toInt().coerceIn(40, 260)
+        val n = (h.length / 2.2f).toInt().coerceIn(60, 360)
         for (i in 0 until n) {
             val (p, d) = h.pointAt(rnd.nextFloat() * h.length)
             val side = if (rnd.nextBoolean()) 1f else -1f
@@ -287,12 +287,12 @@ class GameRenderer(private val context: android.content.Context, private val ctl
         out
     }
 
-    private fun drawModel(name: String, x: Float, y: Float, z: Float, scale: Float, rotY: Float, tint: Float, sway: Float) {
+    private fun drawModel(name: String, x: Float, y: Float, z: Float, scale: Float, rotY: Float, tint: Float, sway: Float, leafKind: Int = 0) {
         val model = library.get(name) ?: return
         ms.identity().translate(x, y, z).rotate(rotY, 0f, 1f, 0f).scale(scale, scale, scale)
         val m = ms.top
         Matrix.multiplyMM(mvp, 0, vp, 0, m, 0)
-        modelShader.draw(model, mvp, m, tint, tint, tint, sway)
+        modelShader.draw(model, mvp, m, tint, tint, tint, sway, leafKind)
     }
 
     private fun drawScenery(h: Hole) {
@@ -307,8 +307,8 @@ class GameRenderer(private val context: android.content.Context, private val ctl
             val y0 = h.groundAt(t.x, t.z) - 0.1f
             val tint = 0.88f + ((idx * 37) % 30) / 100f
             if (model == null) { useMainProgram(); drawProceduralTree(h, idx, t); modelShader.begin(sun, camPos.x, camPos.y, camPos.z, clock); continue }
-            val scale = t.height / model.height * 0.95f
-            drawModel(name, t.x, y0, t.z, scale, (idx * 83 % 360).toFloat(), tint, 0.25f * scale)
+            val scale = t.height / model.height * 0.85f
+            drawModel(name, t.x, y0, t.z, scale, (idx * 83 % 360).toFloat(), tint, 0.25f * scale, if (idx % 9 == 4) 2 else if (idx % 5 == 1) 1 else 0)
         }
         for (d in decorFor(h)) {
             val dx = d.x - camPos.x; val dz = d.z - camPos.z
@@ -538,7 +538,8 @@ class GameRenderer(private val context: android.content.Context, private val ctl
         }
         // Golfer
         val at = if (ctl.phase == Phase.INTRO || ctl.phase == Phase.AIMING || ctl.phase == Phase.CHARGING || ctl.phase == Phase.ACCURACY) ctl.lie else ctl.throwOrigin
-        draw(meshes.disc, xfGround(h, at.x, at.z, 0.05f, 0.5f, 0.5f), 0f, 0f, 0f, 0.28f)
+        draw(meshes.disc, xfGround(h, at.x + 0.35f, at.z + 0.25f, 0.05f, 0.62f, 0.62f), 0f, 0f, 0f, 0.30f)
+        draw(meshes.disc, xfGround(h, at.x + 0.9f, at.z + 0.65f, 0.05f, 0.45f, 0.45f), 0f, 0f, 0f, 0.16f)
         if (f != null && ctl.phase != Phase.AIMING && ctl.phase != Phase.CHARGING && ctl.phase != Phase.ACCURACY) {
             val above = max(0f, f.pos.y - h.groundAt(f.pos.x, f.pos.z))
             val s = 0.28f + 0.02f * above

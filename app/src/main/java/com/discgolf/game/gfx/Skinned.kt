@@ -274,6 +274,7 @@ class SkinShader {
     private val uLight = GLES30.glGetUniformLocation(prog, "uLightDir")
     private val uCam = GLES30.glGetUniformLocation(prog, "uCamPos")
     private val uFog = GLES30.glGetUniformLocation(prog, "uFogColor")
+    private val uOutline = GLES30.glGetUniformLocation(prog, "uOutline")
     private val rows = FloatArray(MAX_BONES * 12)
 
     fun begin(sun: FloatArray, cx: Float, cy: Float, cz: Float) {
@@ -289,6 +290,12 @@ class SkinShader {
         GLES30.glUniform4fv(uBones, min(model.jointCount, MAX_BONES) * 3, rows, 0)
         GLES30.glUniformMatrix4fv(uMvp, 1, false, mvp, 0)
         GLES30.glUniformMatrix4fv(uModel, 1, false, world, 0)
+        // Cartoon outline: the model pushed out along its normals, back faces only, in near-black.
+        GLES30.glEnable(GLES30.GL_CULL_FACE); GLES30.glCullFace(GLES30.GL_FRONT)
+        GLES30.glUniform1f(uOutline, 0.02f)
+        for (p in model.parts) { GLES30.glBindVertexArray(p.vao); GLES30.glDrawElements(GLES30.GL_TRIANGLES, p.count, GLES30.GL_UNSIGNED_SHORT, 0) }
+        GLES30.glDisable(GLES30.GL_CULL_FACE)
+        GLES30.glUniform1f(uOutline, 0f)
         for (p in model.parts) {
             val c = tint(p.material) ?: p.color
             GLES30.glUniform3f(uColor, c[0], c[1], c[2])
@@ -308,6 +315,7 @@ layout(location = 3) in vec4 aWeight;
 uniform mat4 uMVP;
 uniform mat4 uModel;
 uniform vec4 uBones[192];
+uniform float uOutline;
 out vec3 vNormal;
 out vec3 vWorld;
 vec3 skinPos(vec3 p, vec3 n, out vec3 sn) {
@@ -326,6 +334,7 @@ vec3 skinPos(vec3 p, vec3 n, out vec3 sn) {
 void main() {
     vec3 sn;
     vec3 p = skinPos(aPos, aNormal, sn);
+    p += normalize(sn) * uOutline;
     vec4 w = uModel * vec4(p, 1.0);
     vWorld = w.xyz;
     vNormal = normalize(mat3(uModel) * sn);
@@ -340,13 +349,17 @@ uniform vec3 uColor;
 uniform vec3 uLightDir;
 uniform vec3 uCamPos;
 uniform vec3 uFogColor;
+uniform float uOutline;
 out vec4 fragColor;
 void main() {
+    if (uOutline > 0.0) { fragColor = vec4(0.07, 0.09, 0.12, 1.0); return; }
     vec3 n = normalize(vNormal);
     if (!gl_FrontFacing) n = -n;
     float diff = max(dot(n, normalize(uLightDir)), 0.0);
     vec3 amb = mix(vec3(0.34, 0.38, 0.26), vec3(0.70, 0.80, 0.98), n.y * 0.5 + 0.5) * 0.80;
-    vec3 lit = uColor * (amb + vec3(1.0, 0.95, 0.85) * diff * 0.60);
+    vec3 vdir = normalize(uCamPos - vWorld);
+    float rim = pow(1.0 - max(dot(n, vdir), 0.0), 3.0);
+    vec3 lit = uColor * (amb + vec3(1.0, 0.95, 0.85) * diff * 0.60) + vec3(1.0, 0.92, 0.75) * rim * 0.22;
     float d = length(vWorld - uCamPos);
     fragColor = vec4(mix(lit, uFogColor, smoothstep($FOG_START, $FOG_END, d)), 1.0);
 }

@@ -60,7 +60,7 @@ void main() {
     vec3 ray = normalize(vWorldFar - uCamPos);
     float up = clamp(ray.y, 0.0, 1.0);
     vec3 horizon = vec3($HORIZON_R, $HORIZON_G, $HORIZON_B);
-    vec3 zenith = vec3(0.22, 0.46, 0.84);
+    vec3 zenith = vec3(0.17, 0.43, 0.90);
     vec3 col = mix(horizon, zenith, pow(up, 0.55));
 
     vec3 sun = normalize(uSunDir);

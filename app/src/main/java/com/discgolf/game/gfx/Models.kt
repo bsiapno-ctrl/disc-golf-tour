@@ -157,6 +157,8 @@ class ModelShader {
     private val uLean = GLES30.glGetUniformLocation(prog, "uLean")
     private val uFog = GLES30.glGetUniformLocation(prog, "uFogColor")
     private val uLeaf = GLES30.glGetUniformLocation(prog, "uLeaf")
+    private val uLeafDark = GLES30.glGetUniformLocation(prog, "uLeafDark")
+    private val uLeafLight = GLES30.glGetUniformLocation(prog, "uLeafLight")
 
     fun begin(sun: FloatArray, camX: Float, camY: Float, camZ: Float, time: Float) {
         GLES30.glUseProgram(prog)
@@ -168,7 +170,13 @@ class ModelShader {
         GLES30.glActiveTexture(GLES30.GL_TEXTURE0)
     }
 
-    fun draw(model: Model, mvp: FloatArray, world: FloatArray, tr: Float, tg: Float, tb: Float, sway: Float) {
+    /** Foliage colour families: 0 fresh green, 1 yellow-green, 2 pink blossom. */
+    private val leafDark = arrayOf(floatArrayOf(0.10f, 0.36f, 0.09f), floatArrayOf(0.20f, 0.42f, 0.08f), floatArrayOf(0.66f, 0.32f, 0.46f))
+    private val leafLight = arrayOf(floatArrayOf(0.52f, 0.80f, 0.22f), floatArrayOf(0.70f, 0.86f, 0.28f), floatArrayOf(1.00f, 0.78f, 0.85f))
+
+    fun draw(model: Model, mvp: FloatArray, world: FloatArray, tr: Float, tg: Float, tb: Float, sway: Float, leafKind: Int = 0) {
+        GLES30.glUniform3fv(uLeafDark, 1, leafDark[leafKind], 0)
+        GLES30.glUniform3fv(uLeafLight, 1, leafLight[leafKind], 0)
         GLES30.glUniformMatrix4fv(uMvp, 1, false, mvp, 0)
         GLES30.glUniformMatrix4fv(uModel, 1, false, world, 0)
         GLES30.glUniform3f(uTint, tr, tg, tb)
@@ -219,6 +227,8 @@ uniform vec3 uCamPos;
 uniform vec3 uTint;
 uniform vec3 uFogColor;
 uniform float uLeaf;
+uniform vec3 uLeafDark;
+uniform vec3 uLeafLight;
 out vec4 fragColor;
 void main() {
     vec4 t = texture(uTex, vUv);
@@ -227,7 +237,7 @@ void main() {
         // Foliage is re-coloured to fresh, saturated greens whatever the picture says (maples ship in autumn colours).
         float lum = dot(t.rgb, vec3(0.30, 0.59, 0.11));
         float k = clamp(lum * 1.7, 0.0, 1.0);
-        t.rgb = mix(vec3(0.10, 0.36, 0.09), vec3(0.52, 0.80, 0.22), k * k);
+        t.rgb = mix(uLeafDark, uLeafLight, k * k);
     }
     vec3 n = normalize(vNormal);
     if (!gl_FrontFacing) n = -n;
