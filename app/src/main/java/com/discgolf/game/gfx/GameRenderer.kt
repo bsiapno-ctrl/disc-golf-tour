@@ -256,7 +256,7 @@ class GameRenderer(private val context: android.content.Context, private val ctl
     /** The ground itself is the terrain mesh; this adds the tee pad on top of it. */
     private fun drawGround(h: Hole) {
         val dir0 = segHeadingDeg(h.path[0], h.path[1])
-        draw(meshes.cube, xf(h.tee.x, h.tee.y + 0.02f, h.tee.z, 2.4f, 0.04f, 5f, dir0), 0.30f, 0.32f, 0.36f)
+        draw(meshes.cube, xf(h.tee.x, h.tee.y + 0.02f, h.tee.z, 1.3f, 0.04f, 2.6f, dir0), 0.52f, 0.56f, 0.50f)
     }
 
 
