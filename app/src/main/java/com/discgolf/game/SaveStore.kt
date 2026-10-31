@@ -18,6 +18,16 @@ object SaveStore {
         ctx.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit().putString(KEY, ProfileCodec.encode(p)).apply()
     }
 
+    /** Which course and layout the player last picked: (course id, layout name). */
+    fun loadCourseChoice(ctx: Context): Pair<String, String> {
+        val sp = ctx.getSharedPreferences(FILE, Context.MODE_PRIVATE)
+        return (sp.getString("course", "") ?: "") to (sp.getString("layout", "") ?: "")
+    }
+
+    fun saveCourseChoice(ctx: Context, courseId: String, layoutName: String) {
+        ctx.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit().putString("course", courseId).putString("layout", layoutName).apply()
+    }
+
     fun clear(ctx: Context) {
         ctx.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit().remove(KEY).apply()
     }

@@ -12,9 +12,9 @@ import kotlin.math.sqrt
 class Mesh(vertices: FloatArray, indices: ShortArray) {
     private val vao: Int
     private val count = indices.size
+    private val ids = IntArray(3)
 
     init {
-        val ids = IntArray(3)
         GLES30.glGenVertexArrays(1, ids, 0)
         GLES30.glGenBuffers(2, ids, 1)
         vao = ids[0]
@@ -40,6 +40,12 @@ class Mesh(vertices: FloatArray, indices: ShortArray) {
     fun draw() {
         GLES30.glBindVertexArray(vao)
         GLES30.glDrawElements(GLES30.GL_TRIANGLES, count, GLES30.GL_UNSIGNED_SHORT, 0)
+    }
+
+    /** Free the GPU buffers. The mesh must not be drawn afterwards. */
+    fun release() {
+        GLES30.glDeleteBuffers(2, ids, 1)
+        GLES30.glDeleteVertexArrays(1, ids, 0)
     }
 }
 
@@ -106,6 +112,39 @@ object Shapes {
                 val a = ring[k]; val c2 = ring[(k + 1) % seg]
                 if (ny > 0) b.tri(centre, c2, a) else b.tri(centre, a, c2)
             }
+        }
+        return b.build()
+    }
+
+
+    /** A real disc: unit outer radius, domed top, rounded rim, hollow underside. Lathe of a smooth profile. */
+    fun golfDisc(seg: Int = 56): Mesh {
+        val prof = arrayOf(
+            0.00f to 0.26f, 0.22f to 0.27f, 0.45f to 0.285f, 0.68f to 0.30f, 0.84f to 0.305f, 0.93f to 0.29f,
+            0.985f to 0.24f, 1.00f to 0.17f, 0.99f to 0.10f, 0.955f to 0.055f, 0.90f to 0.045f,
+            0.84f to 0.075f, 0.62f to 0.11f, 0.30f to 0.14f, 0.00f to 0.15f,
+        )
+        val b = Builder()
+        val n = prof.size
+        // Profile normals by central differences (outward-pointing).
+        val nr = FloatArray(n); val ny = FloatArray(n)
+        for (j in 0 until n) {
+            val a = prof[maxOf(j - 1, 0)]; val c = prof[minOf(j + 1, n - 1)]
+            val tr = c.first - a.first; val ty = c.second - a.second
+            val l = sqrt(tr * tr + ty * ty).coerceAtLeast(1e-5f)
+            nr[j] = -ty / l; ny[j] = tr / l
+        }
+        nr[0] = 0f; ny[0] = 1f; nr[n - 1] = 0f; ny[n - 1] = -1f
+        val base = ArrayList<Short>()
+        for (k in 0..seg) {
+            val ang = (2.0 * Math.PI * k / seg).toFloat()
+            val c = cos(ang); val s = sin(ang)
+            for (j in 0 until n) base += b.vertex(prof[j].first * c, prof[j].second - 0.2f, prof[j].first * s, nr[j] * c, ny[j], nr[j] * s)
+        }
+        for (k in 0 until seg) for (j in 0 until n - 1) {
+            val a = base[k * n + j]; val bb = base[(k + 1) * n + j]
+            val c2 = base[(k + 1) * n + j + 1]; val d = base[k * n + j + 1]
+            b.quad(a, d, c2, bb)
         }
         return b.build()
     }

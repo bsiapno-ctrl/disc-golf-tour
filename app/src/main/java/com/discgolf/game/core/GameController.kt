@@ -55,6 +55,12 @@ class GameController(
     var disc: DiscModel = DiscModel.DART
         private set
     var shape: ShotShape = ShotShape.FLAT
+
+    /** Sidearm throw. Stays on until switched off. */
+    var forehand = false
+    /** Fine tuning of the launch angle and release tilt, in degrees. Reset for each new shot. */
+    var elevOffset = 0f
+    var bankOffset = 0f
         private set
     val bag: List<DiscModel> get() = DiscModel.unlockedFor(profile.level)
 
@@ -68,6 +74,8 @@ class GameController(
         private set
     var guide: List<Vec3> = emptyList()
         private set
+    /** 1 for a putt inside circle 1 (10 m), 2 for circle 2 (out to PUTT_RANGE), 0 when not putting. */
+    val puttCircle: Int get() = if (!isPutt) 0 else if (distanceToPin <= CIRCLE_1) 1 else 2
 
     // ---- Live throw
     var meter: SwingMeter? = null
@@ -98,6 +106,8 @@ class GameController(
     private var puttAttempt = false
     private var preThrowPin = 0f
     private var preThrowLie = Vec3.ZERO
+    /** How far down the fairway the caddie aims. Grows with the golfer's reach. */
+    private var lookAhead = 55f
 
     val par get() = hole.par
     val totalPar get() = course.sumOf { it.par }
@@ -131,8 +141,36 @@ class GameController(
     fun nextShape(dir: Int) {
         if (phase != Phase.AIMING) return
         shape = if (dir > 0) shape.next() else shape.prev()
+        bankOffset = 0f
         dirty = true
     }
+
+    fun toggleForehand() {
+        if (phase != Phase.AIMING) return
+        forehand = !forehand
+        dirty = true
+    }
+
+    /** Raise (+1) or lower (-1) the launch angle in 1-degree steps. */
+    fun adjustAngle(dir: Int) {
+        if (phase != Phase.AIMING) return
+        elevOffset = (elevOffset + dir).coerceIn(-6f, 14f)
+        dirty = true
+    }
+
+    /** Tilt the release toward hyzer (+1) or anhyzer (-1) in 2-degree steps. */
+    fun adjustTilt(dir: Int) {
+        if (phase != Phase.AIMING) return
+        bankOffset = (bankOffset + dir * 2f).coerceIn(-16f, 16f)
+        dirty = true
+    }
+
+    /** The launch angle that will be used, in degrees above horizontal, for display. */
+    val launchAngleDeg: Float get() =
+        ((if (isPutt) Tuning.puttElevDeg else Tuning.driveElevDeg) + shape.elevDegrees + elevOffset).coerceIn(Launcher.MIN_ELEV_DEG, Launcher.MAX_ELEV_DEG)
+
+    /** The release tilt that will be used, in degrees (+ hyzer, - anhyzer). */
+    val releaseTiltDeg: Float get() = shape.bankDegrees + bankOffset
 
     /** The action button went down. Starts the power bar, or taps the accuracy marker, or advances a screen. */
     fun pressAction() {
@@ -142,6 +180,7 @@ class GameController(
                 refreshGuide()
                 val m = SwingMeter(
                     profile.pct(Stat.ACCURACY), profile.pct(Stat.TOUCH), isPutt, autoAccuracy,
+                    markPower = pinPower, circle1 = puttCircle == 1,
                 )
                 meter = m
                 m.press()
@@ -196,7 +235,7 @@ class GameController(
     // Throwing
     // =====================================================================
 
-    private fun spec() = ThrowSpec(lie, aimHeading, disc, shape, isPutt)
+    private fun spec() = ThrowSpec(lie, aimHeading, disc, shape, isPutt, forehand, elevOffset, bankOffset)
 
     private fun launch(m: SwingMeter) {
         preThrowPin = lie.distanceXZ(hole.basket)
@@ -211,8 +250,13 @@ class GameController(
         setPhase(Phase.FLIGHT)
     }
 
+    /** True once the disc has left the hand. */
+    val released: Boolean get() = swingClock < 0f || swingClock >= RELEASE_TIME
+
     private fun stepFlight(dt: Float) {
         val f = flight ?: return
+        // The disc stays in the hand until the arm has swung through to the release point.
+        if (swingClock in 0f..RELEASE_TIME) return
         accumulator += min(dt, 0.05f)
         var n = 0
         while (accumulator >= Launcher.SIM_DT && n < 12 && !f.isDone) {
@@ -225,7 +269,7 @@ class GameController(
 
     private fun finishThrow(f: DiscFlight) {
         val m = meter
-        val end = Vec3(f.pos.x, 0f, f.pos.z)
+        val end = hole.onGround(f.pos.x, f.pos.z)
         val surface = hole.surfaceAt(end.x, end.z)
         val splash = FlightEvent.SPLASH in f.events || surface == Surface.WATER
         val oob = surface == Surface.OUT_OF_BOUNDS
@@ -266,7 +310,7 @@ class GameController(
         } else {
             gains += profile.addStatUse(Stat.POWER, distance / 8f * (0.5f + 0.5f * power))
             var spin = 1.5f + (if (perfect) 3f else 0f)
-            if (power > 0.55f && lastThrowDisc.idealSpeed * 0.8f < Launcher.launchSpeed(profile, ThrowSpec(preThrowLie, 0f, lastThrowDisc, shape, false), power, false)) spin += 2f
+            if (power > 0.55f && lastThrowDisc.idealSpeed * 0.8f < Launcher.launchSpeed(profile, ThrowSpec(preThrowLie, 0f, lastThrowDisc, shape, false, forehand), power, false)) spin += 2f
             gains += profile.addStatUse(Stat.SPIN, spin)
             if (preThrowPin <= 45f) {
                 var t = 3f
@@ -366,10 +410,19 @@ class GameController(
     private fun prepareNextShot() {
         distanceToPin = lie.distanceXZ(hole.basket)
         isPutt = false
+        // A golfer with a bigger bag aims further down the fairway, to about 80% of their best flat carry.
+        val windEnv = WindOnly(wind, hole.terrain)
+        var reach = 0f
+        for (d in bag) {
+            if (d == DiscModel.DART) continue
+            reach = max(reach, Launcher.carry(profile, ThrowSpec(lie, 0f, d, ShotShape.FLAT, false, forehand), windEnv, 1f))
+        }
+        lookAhead = clamp(reach * 0.8f, 55f, 120f)
         val target = aimTarget()
         aimHeading = dirToHeading((target - lie).flat().normalized())
         shape = ShotShape.FLAT
-        val windEnv = WindOnly(wind)
+        elevOffset = 0f
+        bankOffset = 0f
         val b = bag
         if (distanceToPin <= PUTT_RANGE && DiscModel.DART in b) {
             disc = DiscModel.DART
@@ -380,24 +433,69 @@ class GameController(
             var pick: DiscModel? = null
             for (d in b) {
                 if (d == DiscModel.DART) continue
-                val c = Launcher.carry(profile, ThrowSpec(lie, aimHeading, d, ShotShape.FLAT, false), windEnv, 1f)
+                val c = Launcher.carry(profile, ThrowSpec(lie, aimHeading, d, ShotShape.FLAT, false, forehand), windEnv, 1f)
                 if (c > bestCarry) { bestCarry = c; best = d }
                 // Prefer the slowest disc that still gets there.
-                if (c >= want * 1.04f && (pick == null || d.speed < pick.speed)) pick = d
+                if (c >= want * 1.08f && (pick == null || d.speed < pick.speed)) pick = d
             }
             disc = pick ?: best ?: DiscModel.DART
         }
         dirty = true
         refreshGuide()
+        if (!isPutt) chooseClearLine(target)
     }
 
-    private fun aimTarget(): Vec3 = hole.guideTarget(lie)
+    /**
+     * The caddie reads the trees and water: try a few release shapes and aim offsets with the disc already
+     * picked, fly each one on the real hole (with a little accuracy error either side), and keep the line
+     * that finishes nearest the target without clipping a tree or finding water.
+     */
+    private fun chooseClearLine(target: Vec3) {
+        val baseHeading = aimHeading
+        val env = HoleEnvironment(hole, wind, Random(7), 0f)
+        val windEnv = WindOnly(wind, hole.terrain)
+        val basePower = min(pinPower, 1f)
+        val deg = (Math.PI / 180.0).toFloat()
+        var bestScore = Float.MAX_VALUE
+        var bestShape = ShotShape.FLAT
+        var bestOff = 0f
+        for (shp in CADDIE_SHAPES) {
+          // Aim the power at the target for this shape so shapes are compared fairly.
+          val pw = min(Launcher.powerForDistance(profile, ThrowSpec(lie, baseHeading, disc, shp, false, forehand), windEnv, lie.distanceXZ(target)), 1f).let { if (it <= 0f) basePower else it }
+          for (off in CADDIE_OFFSETS) {
+            val sp = ThrowSpec(lie, baseHeading + off * deg, disc, shp, false, forehand)
+            var total = 0f
+            for (err in CADDIE_ERRS) {
+                val f = Launcher.launch(profile, sp, env, pw, err, false, false)
+                var n = 0
+                while (!f.isDone && n < 6000) { f.step(Launcher.SIM_DT); n++ }
+                val end = hole.onGround(f.pos.x, f.pos.z)
+                var pen = end.distanceXZ(target)
+                if (FlightEvent.TREE in f.events) pen += 35f
+                val surf = hole.surfaceAt(end.x, end.z)
+                if (FlightEvent.SPLASH in f.events || surf == Surface.WATER || surf == Surface.OUT_OF_BOUNDS) pen += 120f
+                else if (surf == Surface.ROUGH) pen += 6f
+                total += if (err == 0f) pen * 1.5f else pen
+            }
+            // Keep the plain line unless another is clearly better.
+            if (shp != ShotShape.FLAT || off != 0f) total += 12f
+            if (total < bestScore) { bestScore = total; bestShape = shp; bestOff = off }
+          }
+        }
+        if (bestShape != shape || bestOff != 0f) {
+            shape = bestShape
+            aimHeading = baseHeading + bestOff * deg
+            refreshGuide()
+        }
+    }
+
+    private fun aimTarget(): Vec3 = hole.guideTarget(lie, lookAhead)
 
     private fun refreshGuide() {
         dirty = false
         distanceToPin = lie.distanceXZ(hole.basket)
         isPutt = disc == DiscModel.DART && distanceToPin <= PUTT_RANGE
-        val windEnv = WindOnly(wind)
+        val windEnv = WindOnly(wind, hole.terrain)
         // The guide aims for the pin when it is the target; otherwise it shows the line at the power
         // needed to reach the aim spot.
         val toPin = (hole.basket - lie).flat().normalized()
@@ -405,7 +503,8 @@ class GameController(
         val alongPin = max(0f, toPin.dot(aimDir))
         val targetDist = if (distanceToPin <= 70f || alongPin > 0.9f) distanceToPin * max(alongPin, 0.5f) else lie.distanceXZ(aimTarget())
         val sp = spec()
-        pinPower = Launcher.powerForDistance(profile, sp, windEnv, targetDist)
+        pinPower = if (isPutt) Launcher.powerForPutt(profile, sp, windEnv, distanceToPin, hole.basket.y)
+        else Launcher.powerForDistance(profile, sp, windEnv, targetDist)
         guide = Launcher.guidePath(profile, sp, windEnv, min(pinPower, 1f))
     }
 
@@ -435,6 +534,14 @@ class GameController(
 
     companion object {
         const val PUTT_RANGE = 20f
+        /** Inside this is circle 1: the short, high-percentage putt. */
+        const val CIRCLE_1 = 10f
+        private val CADDIE_SHAPES = listOf(ShotShape.FLAT, ShotShape.HYZER, ShotShape.ANHYZER)
+        private val CADDIE_OFFSETS = floatArrayOf(0f, -4f, 4f, -8f, 8f, -13f, 13f)
+        private val CADDIE_ERRS = floatArrayOf(-0.5f, 0f, 0.5f)
+        /** Seconds from the final tap to the disc leaving the hand, and to the end of the follow-through. */
+        const val RELEASE_TIME = 0.26f
+        const val SWING_TIME = 0.70f
         const val TAP_IN_RANGE = 1.0f
 
         fun scoreName(strokes: Int, par: Int): String {

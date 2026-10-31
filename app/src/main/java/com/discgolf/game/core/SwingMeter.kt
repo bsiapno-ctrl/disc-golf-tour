@@ -16,6 +16,10 @@ class SwingMeter(
     private val touch01: Float,
     private val isPutt: Boolean,
     private val autoAccuracy: Boolean = false,
+    /** Power (0..1) the caddie says reaches the pin. The bar eases off around it so it is easy to hit. Negative = none. */
+    private val markPower: Float = -1f,
+    /** A short putt inside circle 1: the accuracy zone is more generous and the marker slower. */
+    private val circle1: Boolean = false,
 ) {
     enum class Phase { IDLE, CHARGING, ACCURACY, DONE }
 
@@ -31,7 +35,7 @@ class SwingMeter(
         private set
 
     /** Half-width of the perfect zone, as a fraction of the bar. Wider with Accuracy. */
-    val sweetHalfWidth: Float = lerp(0.035f, 0.13f, accuracy01)
+    val sweetHalfWidth: Float = lerp(0.055f, 0.12f, accuracy01) * (if (circle1) 1.25f else 1f)
 
     var overcooked = false
         private set
@@ -50,7 +54,7 @@ class SwingMeter(
     val fillSeconds: Float = 1.25f * (1f + 0.5f * touch01) * (if (isPutt) 1.6f else 1f)
 
     /** Seconds for the marker to cross the whole bar. */
-    val sweepSeconds: Float = lerp(0.85f, 1.3f, accuracy01) * (if (isPutt) 1.15f else 1f)
+    val sweepSeconds: Float = lerp(1.0f, 1.5f, accuracy01) * (if (isPutt) (if (circle1) 1.35f else 1.15f) else 1f)
 
     val isFinished get() = phase == Phase.DONE
 
@@ -77,7 +81,7 @@ class SwingMeter(
         when (phase) {
             Phase.CHARGING -> {
                 if (power < 1f) {
-                    power = minOf(1f, power + dt / fillSeconds)
+                    power = minOf(1f, power + dt / fillSeconds * markEase())
                 } else {
                     // Sitting at the top: a short grace window, then the throw overcooks.
                     holdAtPeak += dt
@@ -98,9 +102,21 @@ class SwingMeter(
         }
     }
 
+    /**
+     * Speed factor for the bar. Near the pin mark it slows (more with Touch) so a phone thumb has
+     * a real window: about 0.3 s at rookie Touch, nearly half a second at high Touch.
+     */
+    private fun markEase(): Float {
+        if (markPower <= 0.02f || markPower >= 0.95f) return 1f
+        val d = kotlin.math.abs(power - markPower)
+        if (d >= MARK_WINDOW) return 1f
+        val k = 1f - d / MARK_WINDOW
+        return 1f - (0.35f + 0.30f * touch01) * k
+    }
+
     private fun lockPower() {
         // Releasing in the last sliver of the bar counts as a perfect-power release.
-        perfectPower = power >= 0.97f && !overcooked
+        perfectPower = power >= PERFECT_POWER && !overcooked
         if (power >= 0.995f && !overcooked) power = 1f
         if (autoAccuracy) {
             accuracyError = 0f; hitSweetSpot = true; phase = Phase.DONE
@@ -117,7 +133,8 @@ class SwingMeter(
             accuracyError = 0f
             hitSweetSpot = true
         } else {
-            val e = (mag - sweetHalfWidth) / (0.5f - sweetHalfWidth)
+            // Small misses stay small: the error curve is gentle near the sweet spot and steep at the ends.
+            val e = Math.pow(((mag - sweetHalfWidth) / (0.5f - sweetHalfWidth)).toDouble(), 1.3).toFloat()
             accuracyError = if (off < 0) -e else e
             hitSweetSpot = false
         }
@@ -127,5 +144,9 @@ class SwingMeter(
     companion object {
         /** How long the bar can sit full before the throw overcooks. */
         const val PEAK_GRACE = 0.30f
+        /** Releasing at or above this counts as a perfect-power release. */
+        const val PERFECT_POWER = 0.97f
+        /** Half-width of the slow zone around the pin mark, in power units. */
+        const val MARK_WINDOW = 0.075f
     }
 }
