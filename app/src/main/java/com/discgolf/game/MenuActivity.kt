@@ -15,7 +15,10 @@ import android.view.WindowInsets
 import android.view.WindowInsetsController
 import android.widget.FrameLayout
 import android.widget.LinearLayout
+import com.discgolf.game.ui.GlossButton
+import com.discgolf.game.ui.LogoView
 import com.discgolf.game.ui.PortraitView
+import com.discgolf.game.ui.SceneView
 import com.discgolf.game.ui.Ui
 import kotlin.math.abs
 import kotlin.math.min
@@ -94,11 +97,10 @@ class MenuActivity : Activity() {
     private var builtW = 0
     private var builtH = 0
     private fun s(v: Float) = Ui.dpi(this, v * k)
-    private fun lab(text: String, sp: Float = 16f, color: Int = Ui.WHITE, display: Boolean = false) = Ui.label(this, text, sp * k, color, display)
-    private fun btn(text: String, primary: Boolean = true, onClick: () -> Unit) = Ui.button(this, text, primary, onClick).apply {
-        setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 20f * k)
-        setPadding(s(22f), s(12f), s(22f), s(12f))
-    }
+    private fun lab(text: String, sp: Float = 16f, color: Int = Ui.WHITE, display: Boolean = false) =
+        Ui.label(this, text, sp * k, color, display).apply { setShadowLayer(s(2f).toFloat(), 0f, s(1f).toFloat(), Color.argb(200, 5, 30, 70)) }
+    private fun gloss(text: String, tone: Int, sizeDp: Float, onClick: () -> Unit) =
+        GlossButton(this, text, tone, s(sizeDp).toFloat(), onClick)
 
     private fun buildUi(): View {
         val profile = SaveStore.load(this)
@@ -118,52 +120,68 @@ class MenuActivity : Activity() {
                 root.post { setContentView(buildUi()) }
             }
         }
-        root.background = Ui.backdrop()
+        root.addView(SceneView(this), FrameLayout.LayoutParams(-1, -1))
 
         val row = LinearLayout(this).apply {
             orientation = if (portrait) LinearLayout.VERTICAL else LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
-            setPadding(s(32f), s(16f), s(32f), s(16f))
+            setPadding(s(28f), s(12f), s(28f), s(12f))
         }
         root.addView(row, FrameLayout.LayoutParams(-1, -1))
 
-        if (profile != null) {
-            val left = LinearLayout(this).apply {
-                orientation = LinearLayout.VERTICAL
-                gravity = Gravity.CENTER_HORIZONTAL
-                background = Ui.panelBg(this@MenuActivity)
-                setPadding(s(14f), s(14f), s(14f), s(14f))
-            }
-            val face = PortraitView(this).apply { look = profile.look }
-            left.addView(face, LinearLayout.LayoutParams(s(170f), s(200f)))
-            left.addView(lab(profile.name.uppercase(), 22f, Ui.WHITE, true).apply { gravity = Gravity.CENTER })
-            left.addView(lab("LEVEL ${profile.level}   ·   OVR ${profile.overall()}", 14f, Ui.GOLD).apply { gravity = Gravity.CENTER })
-            left.addView(XpBar(this, profile.xp.toFloat() / profile.xpForNextLevel()), LinearLayout.LayoutParams(s(170f), s(10f)).apply { topMargin = s(6f) })
-            if (profile.unspentPoints > 0) {
-                left.addView(lab("${profile.unspentPoints} POINTS TO SPEND", 12f, Ui.GREEN).apply { gravity = Gravity.CENTER })
-            }
-            row.addView(left, LinearLayout.LayoutParams(-2, -2).apply { if (portrait) bottomMargin = s(16f) else rightMargin = s(36f) })
-        }
+        // ---- left: logo and buttons
+        val menu = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_HORIZONTAL }
+        val logoDp = if (portrait) 38f else 36f
+        menu.addView(
+            LogoView(this, listOf("DISC GOLF" to Ui.GOLD, "TOUR" to Color.parseColor("#FF8A3C")), s(logoDp).toFloat()),
+            LinearLayout.LayoutParams(-2, -2),
+        )
+        menu.addView(lab("HOLD  ·  RELEASE  ·  TAP  ·  THROW", 11f, Color.WHITE).apply { gravity = Gravity.CENTER; setPadding(0, s(2f), 0, s(8f)) })
 
-        val right = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_VERTICAL }
-        right.addView(lab("DISC GOLF", 54f, Ui.GOLD, true))
-        right.addView(lab("TOUR", 54f, Ui.WHITE, true).apply { setPadding(s(60f), 0, 0, 0) })
-        right.addView(lab("HOLD  ·  RELEASE  ·  TAP  ·  THROW", 14f, Ui.METAL).apply { setPadding(0, s(4f), 0, s(18f)) })
-
-        val bw = if (portrait) (wDp * 0.8f * dm.density).toInt() else s(280f)
-        fun add(v: View) = right.addView(v, LinearLayout.LayoutParams(bw, -2).apply { topMargin = s(10f) })
+        val bw = if (portrait) min((wDp * 0.8f * dm.density).toInt(), s(300f)) else s(250f)
+        fun add(v: View, h: Int = -2, top: Float = 8f) = menu.addView(v, LinearLayout.LayoutParams(bw, h).apply { topMargin = s(top) })
 
         if (profile != null) {
             val (course, layout) = CourseLibrary.selected(this)
-            add(btn("Play round", true) { startActivity(Intent(this, GameActivity::class.java)) })
-            add(btn("Course: ${course.name}", false) { showCoursePicker() }.apply { setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 15f * k) })
-            add(lab("${layout.name.uppercase()}  ·  ${layout.holes.size} HOLES  ·  PAR ${layout.par}  ·  ${layout.length.toInt()} M", 12f, Ui.METAL).apply { gravity = Gravity.CENTER })
-            add(btn("My golfer", false) { startActivity(Intent(this, GolferActivity::class.java)) })
+            add(gloss("Play round", 0, 24f) { startActivity(Intent(this, GameActivity::class.java)) }, s(50f), 4f)
+            val cname = if (course.name.length > 20) course.name.take(19) + "…" else course.name
+            add(gloss("Course: $cname", 1, 15f) { showCoursePicker() }, s(36f))
+            add(lab("${layout.name.uppercase()}  ·  ${layout.holes.size} HOLES  ·  PAR ${layout.par}  ·  ${layout.length.toInt()} M", 10f, Color.WHITE).apply { gravity = Gravity.CENTER }, -2, 4f)
+            val two = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+            two.addView(gloss("My golfer", 2, 15f) { startActivity(Intent(this, GolferActivity::class.java)) }, LinearLayout.LayoutParams(0, s(36f), 1f).apply { rightMargin = s(5f) })
+            two.addView(gloss("How to play", 1, 15f) { showHelp() }, LinearLayout.LayoutParams(0, s(36f), 1f).apply { leftMargin = s(5f) })
+            add(two, -2, 8f)
         } else {
-            add(btn("Create golfer", true) { startActivity(Intent(this, GolferActivity::class.java)) })
+            add(gloss("Create golfer", 0, 24f) { startActivity(Intent(this, GolferActivity::class.java)) }, s(50f), 4f)
+            add(gloss("How to play", 1, 15f) { showHelp() }, s(36f))
         }
-        add(btn("How to play", false) { showHelp() })
-        row.addView(right)
+        row.addView(menu, LinearLayout.LayoutParams(-2, -2))
+
+        // ---- right: golfer showcase
+        if (profile != null) {
+            val card = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                gravity = Gravity.CENTER_HORIZONTAL
+            }
+            val ph = if (portrait) 150f else 190f
+            val pw = if (portrait) 120f else 150f
+            val face = PortraitView(this).apply { look = profile.look }
+            card.addView(face, LinearLayout.LayoutParams(s(pw), s(ph)))
+            val plate = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                gravity = Gravity.CENTER_HORIZONTAL
+                background = Ui.panelBg(this@MenuActivity, Color.argb(225, 8, 30, 70), Color.WHITE, 12f * k)
+                setPadding(s(10f), s(5f), s(10f), s(6f))
+            }
+            plate.addView(Ui.label(this, profile.name.uppercase(), 17f * k, Ui.WHITE, true).apply { gravity = Gravity.CENTER; setSingleLine(true) })
+            plate.addView(Ui.label(this, "LEVEL ${profile.level}  ·  OVR ${profile.overall()}", 12f * k, Ui.GOLD).apply { gravity = Gravity.CENTER })
+            plate.addView(XpBar(this, profile.xp.toFloat() / profile.xpForNextLevel()), LinearLayout.LayoutParams(s(pw - 30f), s(8f)).apply { topMargin = s(4f) })
+            if (profile.unspentPoints > 0) {
+                plate.addView(Ui.label(this, "${profile.unspentPoints} POINTS TO SPEND", 10f * k, Ui.GREEN).apply { gravity = Gravity.CENTER })
+            }
+            card.addView(plate, LinearLayout.LayoutParams(s(pw + 10f), -2).apply { topMargin = -s(10f) })
+            row.addView(card, LinearLayout.LayoutParams(-2, -2).apply { if (portrait) topMargin = s(12f) else leftMargin = s(34f) })
+        }
         return root
     }
 
