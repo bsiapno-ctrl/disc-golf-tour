@@ -3,6 +3,8 @@ on:
   push:
     branches: ['**']
   workflow_dispatch:
+permissions:
+  contents: write
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -23,3 +25,12 @@ jobs:
         with:
           name: DiscGolfTour-debug-apk
           path: app/build/outputs/apk/debug/app-debug.apk
+      - name: Publish APK as a release (public download link)
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="latest-$(echo "${GITHUB_REF_NAME}" | tr '/' '-')"
+          cp app/build/outputs/apk/debug/app-debug.apk DiscGolfTour-debug.apk
+          gh release delete "$TAG" --cleanup-tag --yes || true
+          gh release create "$TAG" DiscGolfTour-debug.apk --prerelease --target "$GITHUB_SHA" --title "$TAG" --notes "Debug build of $GITHUB_SHA"
