@@ -328,6 +328,8 @@ object Courses {
             if (shell.bunkers.any { hypot(x - it.cx, z - it.cz) < maxOf(it.rx, it.rz) + 2.5f }) return false
             if (hypot(x - shell.basket.x, z - shell.basket.z) < 5f) return false
             if (hypot(x - shell.tee.x, z - shell.tee.z) < 6f) return false
+            // Keep the aim line off the tee clear: no trees within ~6 m of the fairway edge for the first 25 m.
+            if (hypot(x - shell.tee.x, z - shell.tee.z) < 27f && shell.distToPath(x, z) < width / 2f + 6f) return false
             if (shell.distToPath(x, z) < width / 2f + 0.15f) return false
             for (t in trees) { val dx = t.x - x; val dz = t.z - z; if (dx * dx + dz * dz < 2.2f * 2.2f) return false }
             val roll = rnd.nextFloat()

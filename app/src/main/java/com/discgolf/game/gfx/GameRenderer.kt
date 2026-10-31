@@ -189,6 +189,8 @@ class GameRenderer(private val context: android.content.Context, private val ctl
 
     private fun mix(a: Vec3, b: Vec3, t: Float) = Vec3(lerp(a.x, b.x, t), lerp(a.y, b.y, t), lerp(a.z, b.z, t))
 
+    private fun smooth01(x: Float): Float { val t = clamp(x, 0f, 1f); return t * t * (3f - 2f * t) }
+
     private fun updateCamera(dt: Float) {
         val h = ctl.hole
         val up = Vec3(0f, 1f, 0f)
@@ -212,8 +214,11 @@ class GameRenderer(private val context: android.content.Context, private val ctl
             Phase.AIMING, Phase.CHARGING, Phase.ACCURACY -> {
                 val d = headingToDir(ctl.aimHeading)
                 val right = Vec3(d.z, 0f, -d.x)
-                tp = ctl.lie - d * 3.6f + right * 0.7f + up * 1.5f
-                tl = ctl.lie + d * 14f + up * 0.9f
+                // Over-the-shoulder: the golfer fills roughly 40% of the screen height, the aim line runs off ahead of him.
+                tp = ctl.lie - d * 4.5f + right * 0.9f + up * 1.7f
+                tl = ctl.lie + d * 14f + up * 1.2f
+                // Ease in after a flight or the intro, then hold steady while charging.
+                k = if (ctl.phase == Phase.AIMING) 2.4f + 3.6f * smooth01(ctl.phaseTime / 1.2f) else 6f
             }
             Phase.FLIGHT -> {
                 val f = ctl.flight
@@ -516,8 +521,11 @@ class GameRenderer(private val context: android.content.Context, private val ctl
         if (held) {
             val c = ctl.disc.colorRgb
             lastHand[0] = handDisc[12]; lastHand[1] = handDisc[13]; lastHand[2] = handDisc[14]
-            ms.load(handDisc).scale(0.105f, 0.105f, 0.105f)
-            drawRgb(meshes.puck, ms.top, c)
+            // Bigger than a real disc and ringed with a bright rim so it still reads from the behind camera.
+            ms.load(handDisc).scale(0.17f, 0.17f, 0.17f)
+            drawRgb(meshes.puck, ms.top, c, 1.08f, 1f, 0.12f)
+            ms.load(handDisc).scale(0.182f, 0.0765f, 0.182f)
+            drawRgb(meshes.puck, ms.top, 0xFFF4E0, 1.1f, 1f, 0.35f)
         }
         return true
     }
