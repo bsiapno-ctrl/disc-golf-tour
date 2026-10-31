@@ -16,13 +16,13 @@ class HRect(val l: Float, val t: Float, val r: Float, val b: Float) {
 class HudRects(
     val holeBanner: HRect, val distChip: HRect, val scorePanel: HRect, val windPanel: HRect,
     val menu: HRect, val cardBtn: HRect, val minimap: HRect?, val discCard: HRect, val throwPanel: HRect,
-    val meter: HRect, val stick: HRect, val action: HRect,
+    val meter: HRect, val meterHint: HRect, val pinChip: HRect, val stick: HRect, val action: HRect,
     val actionCx: Float, val actionCy: Float, val actionR: Float,
 ) {
     fun all(): List<Pair<String, HRect>> = listOfNotNull(
         "holeBanner" to holeBanner, "distChip" to distChip, "scorePanel" to scorePanel, "windPanel" to windPanel,
         "menu" to menu, "cardBtn" to cardBtn, minimap?.let { "minimap" to it }, "discCard" to discCard,
-        "throwPanel" to throwPanel, "meter" to meter, "stick" to stick, "action" to action,
+        "throwPanel" to throwPanel, "meter" to meter, "meterHint" to meterHint, "pinChip" to pinChip, "stick" to stick, "action" to action,
     )
 }
 
@@ -38,6 +38,7 @@ object HudLayout {
         val mapBottom = min(mapTop + 190 * d, acy - ar - 10 * d)
         val map = if (mapBottom - mapTop < 90 * d) null else HRect(w - 124 * d, mapTop, w - 12 * d, mapBottom)
         // Stick hit zone is radius * 1.35 around (70, h-56) with radius 46.
+        val mR = min(w - 176 * d, 590 * d)   // slim gauge, left-anchored so the screen centre stays clear
         val sr = 46 * d * 1.35f
         return HudRects(
             holeBanner = HRect(12 * d, 10 * d, 222 * d, 70 * d),
@@ -48,8 +49,10 @@ object HudLayout {
             cardBtn = HRect(w - 126 * d, 52 * d, w - 12 * d, 88 * d),
             minimap = map,
             discCard = HRect(12 * d, h - 228 * d, 248 * d, h - 124 * d),
-            throwPanel = HRect(182 * d, h - 98 * d, 328 * d, h - 10 * d),
-            meter = HRect(342 * d, h - 128 * d, max(342 * d + 120 * d, w - 190 * d), h - 14 * d),
+            throwPanel = HRect(140 * d, h - 98 * d, 292 * d, h - 10 * d),
+            meter = HRect(300 * d, h - 94 * d, mR, h - 34 * d),
+            meterHint = HRect(300 * d, h - 30 * d, mR, h - 10 * d),
+            pinChip = HRect(mR - 100 * d, h - 116 * d, mR, h - 98 * d),
             stick = HRect(70 * d - sr, h - 56 * d - sr, 70 * d + sr, h - 56 * d + sr),
             action = HRect(acx - ar, acy - ar, acx + ar, acy + ar),
             actionCx = acx, actionCy = acy, actionR = ar,

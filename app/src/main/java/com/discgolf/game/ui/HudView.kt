@@ -94,12 +94,12 @@ class HudView(context: Context, private val ctl: GameController) : View(context)
         shapePrev.set(cardRect.left, cardRect.bottom - 34 * d, cardRect.left + 70 * d, cardRect.bottom)
         shapeNext.set(cardRect.right - 70 * d, cardRect.bottom - 34 * d, cardRect.right, cardRect.bottom)
         // Throw panel: backhand / forehand, launch angle and release tilt, to the right of the aim stick.
-        val tx0 = L.throwPanel.l; val tx1 = L.throwPanel.r; val rowH = 29 * d; val ty = L.throwPanel.t
+        val tx0 = L.throwPanel.l + 5 * d; val tx1 = L.throwPanel.r - 5 * d; val rowH = 24 * d; val ty = L.throwPanel.t + 5 * d
         handBtn.set(tx0, ty, tx1, ty + rowH)
-        angleMinus.set(tx1 - 96 * d, ty + rowH + 3 * d, tx1 - 68 * d, ty + 2 * rowH)
-        anglePlus.set(tx1 - 28 * d, ty + rowH + 3 * d, tx1, ty + 2 * rowH)
-        tiltMinus.set(tx1 - 96 * d, ty + 2 * rowH + 4 * d, tx1 - 68 * d, ty + 3 * rowH + 1 * d)
-        tiltPlus.set(tx1 - 28 * d, ty + 2 * rowH + 4 * d, tx1, ty + 3 * rowH + 1 * d)
+        angleMinus.set(tx0 + 42 * d, ty + rowH + 3 * d, tx0 + 66 * d, ty + 2 * rowH + 3 * d)
+        anglePlus.set(tx1 - 24 * d, ty + rowH + 3 * d, tx1, ty + 2 * rowH + 3 * d)
+        tiltMinus.set(tx0 + 42 * d, ty + 2 * rowH + 6 * d, tx0 + 66 * d, ty + 3 * rowH + 6 * d)
+        tiltPlus.set(tx1 - 24 * d, ty + 2 * rowH + 6 * d, tx1, ty + 3 * rowH + 6 * d)
         menuRect.set(L.menu.l, L.menu.t, L.menu.r, L.menu.b)
         cardBtn.set(L.cardBtn.l, L.cardBtn.t, L.cardBtn.r, L.cardBtn.b)
         resumeBtn.set(wf / 2f - 110 * d, hf / 2f - 18 * d, wf / 2f + 110 * d, hf / 2f + 32 * d)
@@ -584,8 +584,11 @@ class HudView(context: Context, private val ctl: GameController) : View(context)
         p.style = Paint.Style.STROKE; p.strokeWidth = 2.5f * d; p.color = Color.WHITE
         c.drawOval(sx - sr, sy - sr * 0.55f, sx + sr, sy + sr * 0.55f, p)
         p.style = Paint.Style.FILL
-        text(c, "◀", discPrev.centerX(), discPrev.centerY() + 8 * d, 20f, Ui.GOLD, Paint.Align.CENTER)
-        text(c, "▶", discNext.centerX(), discNext.centerY() + 8 * d, 20f, Ui.GOLD, Paint.Align.CENTER)
+        p.style = Paint.Style.FILL; p.color = Color.argb(90, 6, 16, 40)
+        c.drawCircle(discPrev.centerX(), cardRect.top + 27 * d, 13 * d, p)
+        c.drawCircle(discNext.centerX(), cardRect.top + 27 * d, 13 * d, p)
+        text(c, "◀", discPrev.centerX(), cardRect.top + 27 * d + 7 * d, 16f, Ui.GOLD, Paint.Align.CENTER)
+        text(c, "▶", discNext.centerX(), cardRect.top + 27 * d + 7 * d, 16f, Ui.GOLD, Paint.Align.CENTER)
         val nx = cardRect.left + 90 * d
         val nw = discNext.left - nx - 2 * d
         text(c, disc.displayName.uppercase(), nx, cardRect.top + 24 * d, 17f, Ui.WHITE, maxW = nw)
@@ -610,20 +613,22 @@ class HudView(context: Context, private val ctl: GameController) : View(context)
     private fun drawThrowPanel(c: Canvas) {
         val live = ctl.phase == Phase.AIMING
         val a = if (live) 255 else 120
+        r.set(L.throwPanel.l, L.throwPanel.t, L.throwPanel.r, L.throwPanel.b)
+        panel(c, r, 150, Ui.GOLD)
         // backhand / forehand switch
         r.set(handBtn)
         pill(c, r, Color.parseColor(if (ctl.forehand) "#D9792B" else "#3A68B0"), Color.parseColor(if (ctl.forehand) "#8F4A12" else "#14396F"))
-        text(c, if (ctl.forehand) "FOREHAND" else "BACKHAND", r.centerX(), r.centerY() + 5 * d, 14f, Ui.WHITE, Paint.Align.CENTER)
+        text(c, if (ctl.forehand) "FOREHAND" else "BACKHAND", r.centerX(), r.centerY() + 5 * d, 13f, Ui.WHITE, Paint.Align.CENTER)
         // launch angle
-        val labelX = handBtn.left + 6 * d
-        text(c, "ANGLE", labelX, angleMinus.centerY() + 4 * d, 12f, Ui.METAL, display = false)
-        text(c, String.format("%.0f°", ctl.launchAngleDeg), (angleMinus.right + anglePlus.left) / 2f, angleMinus.centerY() + 5 * d, 14f, Ui.WHITE, Paint.Align.CENTER)
+        val labelX = handBtn.left + 2 * d
+        text(c, "ANGLE", labelX, angleMinus.centerY() + 4 * d, 10f, Ui.METAL, display = false)
+        text(c, String.format("%.0f°", ctl.launchAngleDeg), (angleMinus.right + anglePlus.left) / 2f, angleMinus.centerY() + 5 * d, 13f, Ui.WHITE, Paint.Align.CENTER)
         smallButton(c, angleMinus, "−", a); smallButton(c, anglePlus, "+", a)
         // release tilt
-        text(c, "TILT", labelX, tiltMinus.centerY() + 4 * d, 12f, Ui.METAL, display = false)
+        text(c, "TILT", labelX, tiltMinus.centerY() + 4 * d, 10f, Ui.METAL, display = false)
         val tilt = ctl.releaseTiltDeg
         val tl = if (tilt > 0.5f) String.format("H%.0f°", tilt) else if (tilt < -0.5f) String.format("A%.0f°", -tilt) else "0°"
-        text(c, tl, (tiltMinus.right + tiltPlus.left) / 2f, tiltMinus.centerY() + 5 * d, 14f, Ui.CYAN, Paint.Align.CENTER)
+        text(c, tl, (tiltMinus.right + tiltPlus.left) / 2f, tiltMinus.centerY() + 5 * d, 13f, Ui.CYAN, Paint.Align.CENTER)
         smallButton(c, tiltMinus, "−", a); smallButton(c, tiltPlus, "+", a)
     }
 
@@ -634,7 +639,7 @@ class HudView(context: Context, private val ctl: GameController) : View(context)
         p.style = Paint.Style.STROKE; p.strokeWidth = 1.5f * d; p.color = Color.argb(alpha, 255, 255, 255)
         c.drawRoundRect(rect, 8 * d, 8 * d, p)
         p.style = Paint.Style.FILL
-        text(c, label, rect.centerX(), rect.centerY() + 6 * d, 18f, Ui.WHITE, Paint.Align.CENTER)
+        text(c, label, rect.centerX(), rect.centerY() + 6 * d, 16f, Ui.WHITE, Paint.Align.CENTER)
     }
 
     private fun drawAimButtons(c: Canvas) {
@@ -650,11 +655,10 @@ class HudView(context: Context, private val ctl: GameController) : View(context)
         val accPhase = phase == Phase.ACCURACY
         r.set(M.l, M.t, M.r, M.b)
         panel(c, r, if (accPhase) 235 else 220, if (accPhase) Ui.ORANGE else Ui.GOLD)
-        val bl = M.l + 14 * d; val br = M.r - 14 * d; val bw = br - bl
+        val bl = M.l + 12 * d; val br = M.r - 12 * d; val bw = br - bl
 
         // ---- accuracy strip
-        val ay = M.t + 21 * d; val ah = 16 * d
-        text(c, "ACCURACY", bl, M.t + 15 * d, 10f, if (accPhase) Ui.ORANGE else Ui.METAL, display = false)
+        val ay = M.t + 8 * d; val ah = 12 * d
         trough(c, bl, ay, br, ay + ah)
         if (m != null) {
             val half = m.sweetHalfWidth * bw
@@ -662,19 +666,18 @@ class HudView(context: Context, private val ctl: GameController) : View(context)
             r2.set(bl + bw / 2f - half, ay + 2 * d, bl + bw / 2f + half, ay + ah - 2 * d)
             p.style = Paint.Style.FILL
             p.shader = LinearGradient(0f, r2.top, 0f, r2.bottom, Color.argb(a, 255, 233, 120), Color.argb(a, 214, 150, 0), Shader.TileMode.CLAMP)
-            c.drawRoundRect(r2, 5 * d, 5 * d, p)
+            c.drawRoundRect(r2, 4 * d, 4 * d, p)
             p.shader = null
-            // sweet-spot brackets
             p.color = Color.argb(a, 255, 255, 255)
-            c.drawRect(r2.left - 1 * d, ay - 3 * d, r2.left + 1 * d, ay + ah + 3 * d, p)
-            c.drawRect(r2.right - 1 * d, ay - 3 * d, r2.right + 1 * d, ay + ah + 3 * d, p)
+            c.drawRect(r2.left - 1 * d, ay - 2 * d, r2.left + 1 * d, ay + ah + 2 * d, p)
+            c.drawRect(r2.right - 1 * d, ay - 2 * d, r2.right + 1 * d, ay + ah + 2 * d, p)
             if (accPhase) {
                 val mx = bl + clamp(m.marker, 0f, 1f) * bw
                 p.style = Paint.Style.STROKE; p.strokeCap = Paint.Cap.ROUND
-                p.strokeWidth = 7 * d; p.color = Color.argb(240, 6, 16, 40)
-                c.drawLine(mx, ay - 3 * d, mx, ay + ah + 3 * d, p)
-                p.strokeWidth = 3.5f * d; p.color = Color.WHITE
-                c.drawLine(mx, ay - 3 * d, mx, ay + ah + 3 * d, p)
+                p.strokeWidth = 6 * d; p.color = Color.argb(240, 6, 16, 40)
+                c.drawLine(mx, ay - 2 * d, mx, ay + ah + 2 * d, p)
+                p.strokeWidth = 3f * d; p.color = Color.WHITE
+                c.drawLine(mx, ay - 2 * d, mx, ay + ah + 2 * d, p)
                 p.strokeCap = Paint.Cap.BUTT; p.style = Paint.Style.FILL
             }
         }
@@ -683,7 +686,7 @@ class HudView(context: Context, private val ctl: GameController) : View(context)
         c.drawRoundRect(r2, 3 * d, 3 * d, p)
 
         // ---- power bar
-        val py = M.t + 62 * d; val ph = 28 * d
+        val py = M.t + 29 * d; val ph = 20 * d
         trough(c, bl, py, br, py + ph)
         val z1 = bl + bw * 0.60f; val z2 = bl + bw * 0.88f; val z3 = bl + bw * 0.97f
         val fill = bw * power
@@ -710,11 +713,10 @@ class HudView(context: Context, private val ctl: GameController) : View(context)
         p.style = Paint.Style.STROKE; p.strokeWidth = 2.5f * d; p.color = Color.WHITE
         c.drawRect(z3, py + 2 * d, br - 2 * d, py + ph - 2 * d, p)
         p.style = Paint.Style.FILL
-        text(c, "MAX", (z3 + br) / 2f, py + ph + 13 * d, 8f, Ui.GOLD, Paint.Align.CENTER, display = false)
-        // ticks under the bar: ten steps, taller at 50 %
+                // ticks under the bar: ten steps, taller at 50 %
         for (i in 0..10) {
             val tx = bl + bw * i / 10f
-            val tl = if (i % 5 == 0) 7 * d else 4 * d
+            val tl = if (i % 5 == 0) 5 * d else 3 * d
             p.color = Color.argb(if (i % 5 == 0) 230 else 150, 255, 255, 255)
             c.drawRect(tx - 1 * d, py + ph + 1 * d, tx + 1 * d, py + ph + 1 * d + tl, p)
         }
@@ -722,13 +724,16 @@ class HudView(context: Context, private val ctl: GameController) : View(context)
         val pin = ctl.pinPower
         val pinX = bl + min(pin, 1f) * bw
         val out = pin > 1.001f
-        triangle(c, pinX, py - 6 * d, 6 * d, false, Color.argb(255, 6, 16, 40))
-        triangle(c, pinX, py - 6 * d, 4.2f * d, false, if (out) Ui.ORANGE else Ui.GOLD)
+        triangle(c, pinX, py - 4 * d, 5 * d, false, Color.argb(255, 6, 16, 40))
+        triangle(c, pinX, py - 4 * d, 3.4f * d, false, if (out) Ui.ORANGE else Ui.GOLD)
         p.style = Paint.Style.STROKE; p.strokeWidth = 2.5f * d; p.color = if (out) Ui.ORANGE else Ui.GOLD
         c.drawLine(pinX, py, pinX, py + ph, p)
         p.style = Paint.Style.FILL
-        text(c, if (out) "PIN OUT OF RANGE" else "PIN", pinX, py - 15 * d, 11f, if (out) Ui.ORANGE else Ui.GOLD,
-            if (pin > 0.85f) Paint.Align.RIGHT else Paint.Align.CENTER, display = false)
+        if (out) {
+            val K = L.pinChip
+            toon(c, K, 8 * d, Color.parseColor("#FF9A3C"), Color.parseColor("#C2570F"))
+            text(c, "PIN OUT OF RANGE", K.centerXf(), K.t + K.h / 2f + 4 * d, 9f, Ui.WHITE, Paint.Align.CENTER, display = false, maxW = K.w - 8 * d)
+        }
 
         val hint = when (phase) {
             Phase.AIMING -> "AIM, THEN PRESS & HOLD — RELEASE TO SET POWER"
