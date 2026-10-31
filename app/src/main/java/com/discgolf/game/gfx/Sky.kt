@@ -60,7 +60,7 @@ void main() {
     vec3 ray = normalize(vWorldFar - uCamPos);
     float up = clamp(ray.y, 0.0, 1.0);
     vec3 horizon = vec3($HORIZON_R, $HORIZON_G, $HORIZON_B);
-    vec3 zenith = vec3(0.17, 0.43, 0.90);
+    vec3 zenith = vec3(0.20, 0.50, 0.95);
     vec3 col = mix(horizon, zenith, pow(up, 0.55));
 
     vec3 sun = normalize(uSunDir);
@@ -71,9 +71,9 @@ void main() {
     if (ray.y > 0.02) {
         vec2 cp = ray.xz / (ray.y + 0.12) * 0.9 + vec2(uTime * 0.012, 0.0);
         float c = fbm(cp * 1.4);
-        float cloud = smoothstep(0.50, 0.82, c) * smoothstep(0.02, 0.28, ray.y);
+        float cloud = smoothstep(0.42, 0.70, c) * smoothstep(0.02, 0.28, ray.y);
         vec3 cloudCol = mix(vec3(0.78, 0.82, 0.90), vec3(1.0), smoothstep(0.45, 0.85, c));
-        col = mix(col, cloudCol, cloud * 0.85);
+        col = mix(col, cloudCol, cloud * 0.92);
     }
     // Distant hills and a tree line, three layers fading into the haze. Only drawn just above the horizon.
     if (ray.y < 0.30) {
@@ -87,9 +87,9 @@ void main() {
             // The nearest layer is a ragged tree line.
             if (k == 2) h += 0.012 * vnoise(vec2(az * 60.0, 1.7));
             float edge = smoothstep(h + 0.0015, h - 0.0015, ray.y);
-            vec3 far = vec3(0.47, 0.60, 0.78);
-            vec3 mid = vec3(0.26, 0.45, 0.42);
-            vec3 near = vec3(0.09, 0.26, 0.15);
+            vec3 far = vec3(0.60, 0.74, 0.88);
+            vec3 mid = vec3(0.40, 0.62, 0.60);
+            vec3 near = vec3(0.20, 0.42, 0.26);
             vec3 rc = k == 0 ? far : (k == 1 ? mid : near);
             float shade = 0.85 + 0.25 * smoothstep(0.0, h, ray.y);   // lighter toward the ridge top
             col = mix(col, rc * shade, edge * (ray.y > -0.02 ? 1.0 : 0.0));

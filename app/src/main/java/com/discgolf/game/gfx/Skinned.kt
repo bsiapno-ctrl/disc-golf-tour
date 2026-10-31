@@ -292,7 +292,7 @@ class SkinShader {
         GLES30.glUniformMatrix4fv(uModel, 1, false, world, 0)
         // Cartoon outline: the model pushed out along its normals, back faces only, in near-black.
         GLES30.glEnable(GLES30.GL_CULL_FACE); GLES30.glCullFace(GLES30.GL_FRONT)
-        GLES30.glUniform1f(uOutline, 0.011f)
+        GLES30.glUniform1f(uOutline, 0.016f)
         for (p in model.parts) { GLES30.glBindVertexArray(p.vao); GLES30.glDrawElements(GLES30.GL_TRIANGLES, p.count, GLES30.GL_UNSIGNED_SHORT, 0) }
         GLES30.glDisable(GLES30.GL_CULL_FACE)
         GLES30.glUniform1f(uOutline, 0f)
@@ -352,14 +352,17 @@ uniform vec3 uFogColor;
 uniform float uOutline;
 out vec4 fragColor;
 void main() {
-    if (uOutline > 0.0) { fragColor = vec4(0.07, 0.09, 0.12, 1.0); return; }
+    if (uOutline > 0.0) { fragColor = vec4(0.10, 0.08, 0.10, 1.0); return; }
     vec3 n = normalize(vNormal);
     if (!gl_FrontFacing) n = -n;
-    float diff = max(dot(n, normalize(uLightDir)), 0.0);
-    vec3 amb = mix(vec3(0.34, 0.38, 0.26), vec3(0.70, 0.80, 0.98), n.y * 0.5 + 0.5) * 0.80;
+    float ndl = dot(n, normalize(uLightDir));
+    float wrap = ndl * 0.5 + 0.5;
+    float toon = smoothstep(0.22, 0.80, wrap);          // soft two-tone terminator
+    vec3 shadowTint = vec3(0.62, 0.66, 0.92);           // cool, saturated shade
+    vec3 amb = mix(vec3(0.46, 0.44, 0.34), vec3(0.78, 0.86, 1.0), n.y * 0.5 + 0.5);
     vec3 vdir = normalize(uCamPos - vWorld);
-    float rim = pow(1.0 - max(dot(n, vdir), 0.0), 3.0);
-    vec3 lit = uColor * (amb + vec3(1.0, 0.95, 0.85) * diff * 0.60) + vec3(1.0, 0.92, 0.75) * rim * 0.22;
+    float rim = pow(1.0 - max(dot(n, vdir), 0.0), 2.5) * smoothstep(0.2, 0.7, wrap);
+    vec3 lit = uColor * mix(shadowTint * amb * 0.78, vec3(1.08, 1.0, 0.88), toon) + vec3(1.0, 0.92, 0.75) * rim * 0.28;
     float d = length(vWorld - uCamPos);
     fragColor = vec4(mix(lit, uFogColor, smoothstep($FOG_START, $FOG_END, d)), 1.0);
 }

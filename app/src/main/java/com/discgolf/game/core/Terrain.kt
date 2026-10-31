@@ -1,5 +1,6 @@
 package com.discgolf.game.core
 
+import kotlin.math.abs
 import kotlin.math.floor
 import kotlin.math.hypot
 import kotlin.math.max
@@ -116,7 +117,7 @@ object TerrainGen {
     const val CELL = 2f
     const val MARGIN = 85f
 
-    fun forHole(path: List<Vec3>, fairwayWidth: Float, ponds: List<Pond>, relief: Relief, seed: Int): GridTerrain {
+    fun forHole(path: List<Vec3>, fairwayWidth: Float, ponds: List<Pond>, relief: Relief, seed: Int, bunkers: List<Bunker> = emptyList()): GridTerrain {
         // Arc length along the path, for projecting grid points on to it.
         val cum = FloatArray(path.size)
         for (i in 1 until path.size) cum[i] = cum[i - 1] + path[i].distanceXZ(path[i - 1])
@@ -131,6 +132,8 @@ object TerrainGen {
 
         val big = Noise2(seed)
         val small = Noise2(seed * 31 + 7)
+        val broad = Noise2(seed * 17 + 1)
+        val knoll = Noise2(seed * 53 + 11)
         val tee = path.first(); val basket = path.last()
 
         fun profile(s: Float): Float {
@@ -167,11 +170,18 @@ object TerrainGen {
             val edge = max(0f, d - fairwayWidth * 0.6f)
             h += relief.bank * min(edge, 40f)
             // Gentle on the fairway, livelier in the rough. Flat pads at the tee and the basket.
-            val calm = lerp(0.45f, 1f, smoothstep(fairwayWidth * 0.5f, fairwayWidth * 1.6f, d))
+            val calm = lerp(0.62f, 1f, smoothstep(fairwayWidth * 0.5f, fairwayWidth * 1.6f, d))
             val padTee = smoothstep(5f, 16f, hypot(x - tee.x, z - tee.z))
             val padPin = smoothstep(7f, 20f, hypot(x - basket.x, z - basket.z))
             val n = big.at(x / 42f, z / 42f) * relief.hills + small.at(x / 15f, z / 15f) * relief.hills * 0.32f
             h += n * calm * padTee * padPin
+            // Long, soft swells and the odd knoll so the land rolls instead of just tilting.
+            val swell = broad.at(x / 85f + 3f, z / 85f) * (relief.hills + 0.6f) * 1.5f + knoll.at(x / 26f, z / 26f).let { it * abs(it) } * (relief.hills + 0.6f) * 1.3f
+            h += swell * lerp(0.35f, 1f, smoothstep(fairwayWidth * 0.5f, fairwayWidth * 2f, d)) * padTee * padPin
+            for (b in bunkers) {
+                val q = sqrt(((x - b.cx) / b.rx).let { it * it } + ((z - b.cz) / b.rz).let { it * it })
+                if (q < 1.5f) h -= 0.38f * smoothstep(1.5f, 0.7f, q)
+            }
 
             for (p in ponds) {
                 val q = sqrt(((x - p.cx) / p.rx).let { it * it } + ((z - p.cz) / p.rz).let { it * it })

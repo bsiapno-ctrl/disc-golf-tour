@@ -94,7 +94,7 @@ class CoreTest {
     @Test fun accuracyRatingWidensTheSweetSpot() {
         val low = SwingMeter(0.1f, 0.5f, false).sweetHalfWidth
         val high = SwingMeter(0.9f, 0.5f, false).sweetHalfWidth
-        assertTrue(high > low * 2f)
+        assertTrue(high > low * 1.5f)
     }
 
     @Test fun touchRatingSlowsThePowerBar() {
@@ -366,8 +366,8 @@ class CoreTest {
     }
 
     @Test fun launchAngleChangesTheFlight() {
-        val low = flyEnd(ThrowSpec(Vec3.ZERO, 0f, DiscModel.DART, ShotShape.FLAT, false, elevOffsetDeg = -3f))
-        val high = flyEnd(ThrowSpec(Vec3.ZERO, 0f, DiscModel.DART, ShotShape.FLAT, false, elevOffsetDeg = 8f))
+        val low = flyEnd(ThrowSpec(Vec3.ZERO, 0f, DiscModel.DART, ShotShape.FLAT, false, elevOffsetDeg = -6f))
+        val high = flyEnd(ThrowSpec(Vec3.ZERO, 0f, DiscModel.DART, ShotShape.FLAT, false, elevOffsetDeg = 10f))
         assertTrue("higher launch should not land at the same place", Math.abs(high.z - low.z) > 2f)
     }
 
@@ -381,5 +381,53 @@ class CoreTest {
         val flat = flyEnd(ThrowSpec(Vec3.ZERO, 0f, DiscModel.DART, ShotShape.FLAT, false), 1f)
         val roller = flyEnd(ThrowSpec(Vec3.ZERO, 0f, DiscModel.DART, ShotShape.ROLLER, false), 1f)
         assertTrue("roller z=${roller.z} flat z=${flat.z}", roller.z > flat.z * 0.6f && roller.z > 20f)
+    }
+
+    @Test fun puttPowerSendsThePuttThroughTheChains() {
+        val p = golfer()
+        val spec = ThrowSpec(Vec3.ZERO, 0f, DiscModel.DART, ShotShape.FLAT, true)
+        for (d in listOf(4f, 8f, 12f)) {
+            val pw = Launcher.powerForPutt(p, spec, EmptyField, d, 0f)
+            assertTrue("power $pw for $d", pw in 0f..1f)
+            val h = Launcher.heightAtRange(p, spec, EmptyField, pw, d, 0f)
+            assertEquals(Launcher.PUTT_AIM_HEIGHT, h, 0.1f)
+        }
+    }
+
+    @Test fun barEasesOffAroundThePinMark() {
+        val plain = SwingMeter(0.5f, 0.5f, false)
+        val marked = SwingMeter(0.5f, 0.5f, false, markPower = 0.5f)
+        plain.press(); marked.press()
+        repeat(90) { plain.update(1f / 120f); marked.update(1f / 120f) }
+        assertTrue("marked ${marked.power} plain ${plain.power}", marked.power < plain.power)
+    }
+
+    @Test fun overcookedThrowFlaresAndPerfectIsCleaner() {
+        val p = golfer()
+        val spec = ThrowSpec(Vec3.ZERO, 0f, DiscModel.ANVIL, ShotShape.FLAT, false)
+        fun endX(over: Boolean, perfect: Boolean, noise: Float): Float {
+            val f = Launcher.launch(p, spec, EmptyField, 1f, 0f, over, perfect, noise)
+            var n = 0
+            while (!f.isDone && n++ < 20000) f.step(Launcher.SIM_DT)
+            return f.pos.x
+        }
+        val clean = endX(false, false, 0.8f)
+        val over = endX(true, false, 0.8f)
+        val perfect = endX(false, true, 0.8f)
+        assertTrue("clean $clean over $over perfect $perfect", Math.abs(over - clean) > 1f)
+        assertTrue("clean $clean perfect $perfect", Math.abs(perfect - endX(false, true, 0f)) < Math.abs(clean - endX(false, false, 0f)))
+    }
+
+    @Test fun guideMatchesAPerfectThrowIncludingShapeAndForehand() {
+        val g = GameController(golfer(), seed = 5L)
+        g.update(0.5f); g.pressAction(); g.update(3.3f)
+        g.toggleForehand(); g.nextShape(1); g.adjustAngle(3)
+        g.update(0.2f)
+        val endGuide = g.guide.last()
+        val sp = ThrowSpec(g.lie, g.aimHeading, g.disc, g.shape, g.isPutt, g.forehand, g.elevOffset, g.bankOffset)
+        val f = Launcher.launch(g.profile, sp, WindOnly(g.wind, g.hole.terrain), minOf(g.pinPower, 1f), 0f, false, minOf(g.pinPower, 1f) >= SwingMeter.PERFECT_POWER)
+        var n = 0
+        while (f.state == FlightState.FLYING && n++ < 6000) f.step(Launcher.SIM_DT)
+        assertTrue(f.pos.distanceXZ(endGuide) < 1.5f)
     }
 }

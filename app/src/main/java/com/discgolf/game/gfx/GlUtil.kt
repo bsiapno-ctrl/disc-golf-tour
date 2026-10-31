@@ -26,8 +26,8 @@ fun linkProgram(vs: String, fs: String): Int {
 }
 
 /** Fog starts and ends at these distances, in every shader, so the ground, trees and sky agree. */
-const val FOG_START = 60f
-const val FOG_END = 400f
+const val FOG_START = 45f
+const val FOG_END = 340f
 /** Colour of the sky at the horizon, which is also the fog colour. */
 const val HORIZON_R = 0.80f
 const val HORIZON_G = 0.89f

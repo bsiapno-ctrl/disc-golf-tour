@@ -91,7 +91,7 @@ class TerrainRender(val hole: Hole) {
             buf.put(if (s == Surface.FAIRWAY) ON else OFF)
             buf.put(if (s == Surface.WATER) ON else OFF)
             buf.put(if (s == Surface.OUT_OF_BOUNDS) ON else OFF)
-            buf.put(ON)
+            buf.put(if (hole.sandAt(x, z) && s != Surface.WATER) ON else OFF)
         }
         buf.position(0)
         val ids = IntArray(1)
@@ -188,7 +188,7 @@ float fbm(vec2 p) {
 void main() {
     vec3 n = normalize(vNormal);
     vec2 uv = (vWorld.xz - uSurfRect.xy) * uSurfRect.zw;
-    vec3 map = texture(uSurf, uv).rgb;
+    vec4 map = texture(uSurf, uv);
     float fair = smoothstep(0.35, 0.65, map.r);
     float water = smoothstep(0.30, 0.70, map.g);
     float oob = map.b;
@@ -205,15 +205,15 @@ void main() {
     float near = 1.0 - smoothstep(6.0, 55.0, dist);
     float blades = vnoise(vec2(vWorld.x * 38.0, vWorld.z * 9.0)) * 0.5 + vnoise(vec2(vWorld.x * 11.0 + 7.0, vWorld.z * 26.0)) * 0.5;
     float speck = vnoise(vWorld.xz * 95.0);
-    float detail = ((blades - 0.5) * 0.55 + (speck - 0.5) * 0.35) * near;
+    float detail = ((blades - 0.5) * 0.30 + (speck - 0.5) * 0.14) * near;
     rough *= 0.86 + 0.28 * fine;
     rough *= 1.0 + detail;
     rough = mix(rough, rough * vec3(1.15, 1.2, 0.7), smoothstep(0.7, 0.95, speck) * near * 0.5);   // pale blade tips
 
-    vec3 fairway = mix(vec3(0.50, 0.74, 0.22), vec3(0.58, 0.80, 0.27), broad);
+    vec3 fairway = mix(vec3(0.58, 0.82, 0.20), vec3(0.68, 0.88, 0.26), broad);
     // Mowing stripes, fading out in the distance where they would alias.
-    float stripe = smoothstep(0.42, 0.58, fract(vWorld.z / 9.0));
-    fairway *= 1.0 - 0.15 * stripe * (1.0 - smoothstep(60.0, 160.0, dist));
+    float stripe = smoothstep(0.35, 0.65, fract(vWorld.z / 9.0));
+    fairway *= 1.0 - 0.13 * stripe * (1.0 - smoothstep(60.0, 160.0, dist));
     fairway *= 0.94 + 0.12 * fine;
     fairway *= 1.0 + detail * 0.8;
 
@@ -222,6 +222,8 @@ void main() {
     float green = 1.0 - smoothstep(6.2, 7.2, dB);
     vec3 greenCol = vec3(0.40, 0.69, 0.30) * (1.0 - 0.03 * step(0.5, fract(dB / 1.4)));
 
+    float sand = smoothstep(0.35, 0.65, map.a);
+    float lip = smoothstep(0.08, 0.35, map.a) * (1.0 - smoothstep(0.40, 0.75, map.a));
     vec3 col = mix(rough, fairway, fair);
     col = mix(col, greenCol, green);
     // Lighter fringe where the fairway meets the rough, like a mown collar.
@@ -232,7 +234,13 @@ void main() {
     // Steep banks show earth through the grass; ponds are muddy.
     float slope = 1.0 - n.y;
     col = mix(col, vec3(0.42, 0.36, 0.27), smoothstep(0.16, 0.34, slope) * 0.65);
-    col = mix(col, vec3(0.20, 0.19, 0.14), water);
+    col = mix(col, vec3(0.30, 0.27, 0.19), water * 0.85);
+    // Wet earth just outside the water, a bright lip round each bunker, then the sand itself with ripple lines and grit.
+    col = mix(col, vec3(0.40, 0.34, 0.22), smoothstep(0.04, 0.35, map.g) * (1.0 - water) * 0.7);
+    col = mix(col, col * vec3(1.12, 1.05, 0.80), lip * 0.85);
+    float rip = 0.5 + 0.5 * sin(vWorld.x * 2.2 + vWorld.z * 1.3 + vnoise(vWorld.xz * 0.8) * 5.0);
+    vec3 sandCol = mix(vec3(0.89, 0.80, 0.55), vec3(0.80, 0.70, 0.45), rip * 0.35 + (vnoise(vWorld.xz * 30.0) - 0.5) * 0.25 * (1.0 - smoothstep(10.0, 50.0, dist)));
+    col = mix(col, sandCol, sand);
 
     // Light: sun plus sky-and-ground ambient.
     float diff = max(dot(n, normalize(uLightDir)), 0.0);

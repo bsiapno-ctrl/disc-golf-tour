@@ -121,6 +121,10 @@ class DiscFlight(
         val rate = (-turnMag * high * Tuning.kTurn + disc.fade * (low + Tuning.fadeBase) * Tuning.kFade) * (1.15f - 0.30f * spin01)
         bank = (bank + rate * dt).coerceIn(Tuning.bankMin, Tuning.bankMax)
 
+        // The nose pitches down with the flight path, so a slowing disc settles into a glide instead of stalling.
+        val gamma = atan2(vel.y, max(vel.lengthXZ(), 0.5f))
+        val target = gamma + Tuning.noseTrim
+        if (target < nose) nose += (target - nose) * Tuning.noseFollow * dt
         pos = pos + vel * dt
         if (vel.lengthXZ() > 0.5f) heading = dirToHeading(vel)
         maxHeight = max(maxHeight, pos.y)
@@ -201,14 +205,14 @@ object Tuning {
     var cl0Base = 0.08f
     var cl0PerGlide = 0.024f
     var clAlpha = 2.2f
-    var cd0 = 0.068f
+    var cd0 = 0.054f
     var cdQuad = 2.5f
-    var kTurn = 0.09f
-    var kFade = 0.07f
+    var kTurn = 0.13f
+    var kFade = 0.045f
     var fadeBase = 0.10f
-    var lowLo = 0.35f
-    var lowHi = 0.75f
-    var driveElevDeg = 4f
+    var lowLo = 0.55f
+    var lowHi = 0.95f
+    var driveElevDeg = 9f
     var puttElevDeg = 3f
     var noseOverElevDeg = -2.5f
     var bankMin = -1.0f
@@ -216,6 +220,9 @@ object Tuning {
     var stallAlpha = 0.35f
     /** How much of the bank angle turns into sideways lift. Real discs shed bank quickly; this keeps curves readable. */
     var bankGain = 0.55f
+    /** Pitch relaxation toward the flight path (1/s) and the resting angle of attack offset (rad). */
+    var noseFollow = 0.6f
+    var noseTrim = 0.10f
 }
 
 /** Open field: no wind, no trees. Used by the carry-distance helpers and tests. */
@@ -241,7 +248,7 @@ class ThrowSpec(
 )
 
 object Launcher {
-    const val PUTT_MAX_SPEED = 15.5f
+    const val PUTT_MAX_SPEED = 17f
     const val PUTT_MIN_SPEED = 3f
     const val DRIVE_MIN_SPEED = 4f
     /** A sidearm throw is a little slower than a backhand for most players. */
@@ -274,14 +281,21 @@ object Launcher {
     ): DiscFlight {
         val acc = p.pct(Stat.ACCURACY)
         val deg = (Math.PI / 180.0).toFloat()
-        var maxYaw = lerp(11f, 4.5f, acc) * deg
-        if (spec.isPutt) maxYaw *= 0.55f
+        var maxYaw = lerp(11f, 8f, acc) * deg
+        if (spec.isPutt) maxYaw *= 0.8f
         if (overcooked) maxYaw *= 1.6f
         if (spec.forehand) maxYaw *= FOREHAND_YAW
-        val jitter = lerp(2.2f, 0.7f, p.pct(Stat.SPIN)) * deg * (0.4f + 0.6f * power) * noise
+        // A perfect release is clean: the timing miss shrinks and the random wobble halves.
+        val accErr = if (perfect) accuracyError * 0.8f else accuracyError
+        var jitter = lerp(2.4f, 1.8f, p.pct(Stat.SPIN)) * deg * (0.4f + 0.6f * power) * noise * (if (perfect) 0.5f else 1f)
+        if (spec.isPutt) jitter *= 1.1f
+        // Muscling it: past a very hard pull the wobble grows, and an overcooked pull flares the disc off to one side.
+        if (!spec.isPutt && power > 0.9f && !perfect) jitter *= 1f + (power - 0.9f) * 6f
+        var flare = 0f
+        if (overcooked) flare = (if (noise >= 0f) 1f else -1f) * (2.5f + 2.5f * (1f - acc)) * deg
 
-        val heading = spec.aimHeading + accuracyError * maxYaw + jitter
-        val bank = ((spec.shape.bankDegrees + spec.bankOffsetDeg) * deg + accuracyError * 8f * deg).coerceIn(Tuning.bankMin, Tuning.bankMax)
+        val heading = spec.aimHeading + accErr * maxYaw + jitter + flare
+        val bank = ((spec.shape.bankDegrees + spec.bankOffsetDeg) * deg + accErr * 8f * deg - flare * 1.2f).coerceIn(Tuning.bankMin, Tuning.bankMax)
         val baseElev = (if (spec.isPutt) Tuning.puttElevDeg else Tuning.driveElevDeg) + spec.shape.elevDegrees
         val elev = (baseElev + spec.elevOffsetDeg).coerceIn(MIN_ELEV_DEG, MAX_ELEV_DEG) * deg
         val nose = elev + (spec.shape.noseDegrees + Tuning.noseOverElevDeg) * deg
@@ -295,7 +309,7 @@ object Launcher {
     }
 
     /** Flat-ground carry in metres for a perfect release, ignoring trees. Used by the caddie. */
-    fun carry(p: PlayerProfile, spec: ThrowSpec, env: FlightEnvironment, power: Float, perfect: Boolean = false): Float {
+    fun carry(p: PlayerProfile, spec: ThrowSpec, env: FlightEnvironment, power: Float, perfect: Boolean = power >= SwingMeter.PERFECT_POWER): Float {
         val f = launch(p, spec, env, power, 0f, false, perfect)
         var steps = 0
         while (f.state == FlightState.FLYING && steps < 6000) { f.step(SIM_DT); steps++ }
@@ -304,7 +318,7 @@ object Launcher {
 
     /** Sampled flight path of a perfect release, for the aim guide. Includes the roll-out. */
     fun guidePath(p: PlayerProfile, spec: ThrowSpec, env: FlightEnvironment, power: Float): List<Vec3> {
-        val f = launch(p, spec, env, power, 0f, false, false)
+        val f = launch(p, spec, env, power, 0f, false, power >= SwingMeter.PERFECT_POWER)
         val pts = ArrayList<Vec3>(64)
         var steps = 0
         while (f.state == FlightState.FLYING && steps < 6000) {
@@ -323,6 +337,35 @@ object Launcher {
         repeat(14) {
             val mid = (lo + hi) / 2f
             if (carry(p, spec, env, mid) < distance) lo = mid else hi = mid
+        }
+        return (lo + hi) / 2f
+    }
+
+    /** Height above the basket base of a perfect release as it crosses [range] metres from the origin; -1 if it lands short. */
+    fun heightAtRange(p: PlayerProfile, spec: ThrowSpec, env: FlightEnvironment, power: Float, range: Float, baseY: Float): Float {
+        val f = launch(p, spec, env, power, 0f, false, power >= SwingMeter.PERFECT_POWER)
+        var steps = 0
+        while (f.state == FlightState.FLYING && steps < 6000) {
+            f.step(SIM_DT); steps++
+            if (f.pos.distanceXZ(spec.origin) >= range) return f.pos.y - baseY
+        }
+        return -1f
+    }
+
+    /** Height above the base where a putt is aimed: the middle of the chains. */
+    const val PUTT_AIM_HEIGHT = 0.95f
+
+    /**
+     * The power (0..1) that sends a perfect putt through the chains at [distance] metres. Putts are not
+     * aimed at the ground under the basket (that would land on the grass): they arrive at chain height.
+     * 1.01 means out of range.
+     */
+    fun powerForPutt(p: PlayerProfile, spec: ThrowSpec, env: FlightEnvironment, distance: Float, baseY: Float): Float {
+        if (heightAtRange(p, spec, env, 1f, distance, baseY) < PUTT_AIM_HEIGHT) return 1.01f
+        var lo = 0f; var hi = 1f
+        repeat(14) {
+            val mid = (lo + hi) / 2f
+            if (heightAtRange(p, spec, env, mid, distance, baseY) < PUTT_AIM_HEIGHT) lo = mid else hi = mid
         }
         return (lo + hi) / 2f
     }

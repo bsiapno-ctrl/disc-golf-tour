@@ -27,6 +27,17 @@ class Pond(val cx: Float, val cz: Float, val rx: Float, val rz: Float) {
     }
 }
 
+/** A sand bunker (an ellipse with a wobbly rim). Looks only; discs fly and roll through it as on grass. */
+class Bunker(val cx: Float, val cz: Float, val rx: Float, val rz: Float, val phase: Float = 0f) {
+    fun contains(x: Float, z: Float): Boolean {
+        val dx = (x - cx) / rx
+        val dz = (z - cz) / rz
+        val a = Math.atan2(dz.toDouble(), dx.toDouble()).toFloat()
+        val r = 1f + 0.16f * kotlin.math.sin(a * 3f + phase) + 0.08f * kotlin.math.sin(a * 5f + phase * 2.3f)
+        return dx * dx + dz * dz < r * r
+    }
+}
+
 enum class Surface { FAIRWAY, ROUGH, WATER, OUT_OF_BOUNDS }
 
 class Hole(
@@ -39,6 +50,7 @@ class Hole(
     val trees: List<Tree>,
     val ponds: List<Pond>,
     val terrain: Terrain = FlatTerrain,
+    val bunkers: List<Bunker> = emptyList(),
 ) {
     /** Tee and basket positions, sitting on the ground. */
     val tee: Vec3 = path.first().let { Vec3(it.x, terrain.heightAt(it.x, it.z), it.z) }
@@ -76,6 +88,11 @@ class Hole(
     }
 
     fun distToPath(x: Float, z: Float) = project(x, z).first
+
+    fun sandAt(x: Float, z: Float): Boolean {
+        for (b in bunkers) if (b.contains(x, z)) return true
+        return false
+    }
 
     fun surfaceAt(x: Float, z: Float): Surface {
         for (p in ponds) if (p.contains(x, z)) return Surface.WATER
@@ -178,9 +195,9 @@ class HoleEnvironment(
             }
             val speed = flight.vel.length()
             // Slow discs drop into the chains; hard ones blow through or kick out. Putting skill helps.
-            var chance = 0.97f - 0.035f * max(0f, speed - 3.5f)
+            var chance = 0.86f - 0.05f * max(0f, speed - 3.5f)
             if (py > 1.2f) chance *= 0.9f
-            chance += 0.20f * putting01
+            chance += 0.14f * putting01
             chance = clamp(chance, 0.03f, 0.97f)
             if (rng.nextFloat() < chance) {
                 flight.holed = true
@@ -289,25 +306,34 @@ object Courses {
         val trees = h.trees.filter { Math.hypot((it.x - tee.x).toDouble(), (it.z - tee.z).toDouble()) > 6.0 }
         var len = 0f
         for (i in 1 until path.size) len += path[i].distanceXZ(path[i - 1])
-        return Hole(h.number, h.name, parFor(len), path, h.fairwayWidth, trees, h.ponds, h.terrain)
+        return Hole(h.number, h.name, parFor(len), path, h.fairwayWidth, trees, h.ponds, h.terrain, h.bunkers)
     }
 
-    /** Scatter trees along a hole, on both sides, thicker the further from the fairway. Deterministic per seed. */
+    /**
+     * Scatter trees along a hole in groves and gaps rather than a wall: a slowly varying "grove" field decides where
+     * the edge is wooded and where it opens up, a few tight clusters add punctuation, and a handful of guardians
+     * still hug the fairway so the hole keeps its teeth. Deterministic per seed.
+     */
     fun scatterTrees(
         shell: Hole, width: Float, density: Float, guardianChance: Float, seed: Long, extra: List<Tree> = emptyList(),
     ): List<Tree> {
         val rnd = Random(seed)
         val ponds = shell.ponds
         val trees = ArrayList<Tree>(extra)
+        val grove = Noise2((seed * 7 + 3).toInt())
+        val kind = Noise2((seed * 13 + 5).toInt())
 
-        fun tryAdd(x: Float, z: Float) {
-            if (ponds.any { it.contains(x, z) }) return
-            if (hypot(x - shell.basket.x, z - shell.basket.z) < 5f) return
-            if (hypot(x - shell.tee.x, z - shell.tee.z) < 6f) return
-            if (shell.distToPath(x, z) < width / 2f + 0.15f) return
+        fun tryAdd(x: Float, z: Float, forced: Int = -1, tall: Float = 0f): Boolean {
+            if (ponds.any { it.contains(x, z) }) return false
+            if (shell.bunkers.any { hypot(x - it.cx, z - it.cz) < maxOf(it.rx, it.rz) + 2.5f }) return false
+            if (hypot(x - shell.basket.x, z - shell.basket.z) < 5f) return false
+            if (hypot(x - shell.tee.x, z - shell.tee.z) < 6f) return false
+            if (shell.distToPath(x, z) < width / 2f + 0.15f) return false
+            for (t in trees) { val dx = t.x - x; val dz = t.z - z; if (dx * dx + dz * dz < 2.2f * 2.2f) return false }
             val roll = rnd.nextFloat()
-            val variant = if (roll < 0.60f) 0 else if (roll < 0.94f) 1 else 2
-            trees += Tree(x, z, 7f + rnd.nextFloat() * 6.5f, 0.2f + rnd.nextFloat() * 0.14f, 1.7f + rnd.nextFloat() * 1.4f, variant)
+            val variant = if (forced >= 0) forced else if (roll < 0.55f) 0 else if (roll < 0.90f) 1 else 2
+            trees += Tree(x, z, 7f + rnd.nextFloat() * 6.5f + tall, 0.2f + rnd.nextFloat() * 0.14f, 1.7f + rnd.nextFloat() * 1.4f, variant)
+            return true
         }
 
         var s = 7f
@@ -315,30 +341,75 @@ object Courses {
             val (pt, dir) = shell.pointAt(s)
             val right = Vec3(dir.z, 0f, -dir.x)
             for (side in intArrayOf(-1, 1)) {
-                if (rnd.nextFloat() < density) {
-                    val off = if (rnd.nextFloat() < guardianChance) width / 2f + 0.3f + rnd.nextFloat() * 1.2f
-                    else width / 2f + 1.5f + rnd.nextFloat() * 6f
+                val k = smoothstep(-0.30f, 0.40f, grove.at(s / 24f, side * 5.3f + 11f))
+                if (rnd.nextFloat() < density * (0.10f + 1.35f * k)) {
+                    val off = if (rnd.nextFloat() < guardianChance * (0.35f + 0.65f * k)) width / 2f + 0.3f + rnd.nextFloat() * 1.2f
+                    else width / 2f + 1.5f + rnd.nextFloat() * (3f + 6f * k)
                     tryAdd(pt.x + right.x * side * off, pt.z + right.z * side * off)
                 }
             }
             s += 2.2f + rnd.nextFloat() * 2.4f
         }
-        // Deep woods beyond the fairway edge.
-        repeat((shell.length * 2.4f).toInt()) {
+        // Tight clusters: one tall tree with a few younger ones around it, often all blossom or all round-leaf.
+        repeat((shell.length / 22f).toInt().coerceAtLeast(2)) {
+            val cs = 14f + rnd.nextFloat() * (shell.length - 22f).coerceAtLeast(4f)
+            val (pt, dir) = shell.pointAt(cs)
+            val right = Vec3(dir.z, 0f, -dir.x)
+            val side = if (rnd.nextBoolean()) 1 else -1
+            val off = width / 2f + 3.5f + rnd.nextFloat() * 9f
+            val cx = pt.x + right.x * side * off; val cz = pt.z + right.z * side * off
+            val v = if (rnd.nextFloat() < 0.35f) 2 else if (rnd.nextFloat() < 0.5f) 1 else 0
+            tryAdd(cx, cz, v, 2.5f)
+            repeat(2 + rnd.nextInt(4)) {
+                val a = rnd.nextFloat() * 6.283f; val r = 2.6f + rnd.nextFloat() * 3.2f
+                tryAdd(cx + kotlin.math.cos(a) * r, cz + kotlin.math.sin(a) * r, if (rnd.nextFloat() < 0.7f) v else -1)
+            }
+        }
+        // Woods beyond the fairway edge, in blobs with clearings between.
+        repeat((shell.length * 3.0f).toInt()) {
             val (pt, dir) = shell.pointAt(rnd.nextFloat() * shell.length)
             val right = Vec3(dir.z, 0f, -dir.x)
             val side = if (rnd.nextBoolean()) 1 else -1
             val off = width / 2f + 7f + rnd.nextFloat() * rnd.nextFloat() * 70f
-            tryAdd(pt.x + right.x * side * off, pt.z + right.z * side * off)
+            val x = pt.x + right.x * side * off; val z = pt.z + right.z * side * off
+            if (kind.at(x / 28f, z / 28f) > -0.15f) tryAdd(x, z)
         }
         return trees
     }
 
+    /** Sand bunkers: one or two beside the green, one beside the fairway on longer holes. Looks only. */
+    fun makeBunkers(shell: Hole, width: Float, seed: Long): List<Bunker> {
+        val rnd = Random(seed * 31 + 9)
+        val out = ArrayList<Bunker>()
+        fun place(s: Float, offMin: Float, offMax: Float, rx: Float, rz: Float) {
+            for (attempt in 0 until 6) {
+                val (pt, dir) = shell.pointAt(s)
+                val right = Vec3(dir.z, 0f, -dir.x)
+                val side = if (rnd.nextBoolean()) 1 else -1
+                val off = offMin + rnd.nextFloat() * (offMax - offMin)
+                val x = pt.x + right.x * side * off; val z = pt.z + right.z * side * off
+                val r = maxOf(rx, rz) + 1.5f
+                if (shell.ponds.any { hypot(x - it.cx, z - it.cz) < maxOf(it.rx, it.rz) + r }) continue
+                if (hypot(x - shell.basket.x, z - shell.basket.z) < 8.5f + r * 0.6f) continue
+                if (hypot(x - shell.tee.x, z - shell.tee.z) < 14f) continue
+                if (out.any { hypot(x - it.cx, z - it.cz) < 14f }) continue
+                out += Bunker(x, z, rx, rz, rnd.nextFloat() * 6.28f)
+                return
+            }
+        }
+        place(shell.length - 7f - rnd.nextFloat() * 5f, width / 2f + 5f, width / 2f + 9f, 4.4f + rnd.nextFloat() * 1.8f, 3.2f + rnd.nextFloat() * 1.3f)
+        if (shell.length > 70f) place(shell.length * (0.45f + rnd.nextFloat() * 0.25f), width / 2f + 4.5f, width / 2f + 10f, 5f + rnd.nextFloat() * 2f, 3.4f + rnd.nextFloat() * 1.3f)
+        if (shell.length > 120f) place(shell.length * (0.2f + rnd.nextFloat() * 0.15f), width / 2f + 4f, width / 2f + 9f, 3.2f + rnd.nextFloat() * 1.5f, 2.4f + rnd.nextFloat())
+        return out
+    }
+
     private fun build(sp: Spec): Hole {
         val path = sp.pts.map { Vec3(it.first, 0f, it.second) }
-        val shell = Hole(sp.number, sp.name, sp.par, path, sp.width, emptyList(), sp.ponds)
-        val terrain = TerrainGen.forHole(path, sp.width, sp.ponds, sp.relief, 1000 + sp.number * 131)
+        val plain = Hole(sp.number, sp.name, sp.par, path, sp.width, emptyList(), sp.ponds)
+        val bunkers = makeBunkers(plain, sp.width, 1000L + sp.number * 131L)
+        val terrain = TerrainGen.forHole(path, sp.width, sp.ponds, sp.relief, 1000 + sp.number * 131, bunkers)
+        val shell = Hole(sp.number, sp.name, sp.par, path, sp.width, emptyList(), sp.ponds, terrain, bunkers)
         val trees = scatterTrees(shell, sp.width, sp.density, sp.guardian, 1000L + sp.number * 131L, sp.extra)
-        return Hole(sp.number, sp.name, sp.par, path, sp.width, trees, sp.ponds, terrain)
+        return Hole(sp.number, sp.name, sp.par, path, sp.width, trees, sp.ponds, terrain, bunkers)
     }
 }

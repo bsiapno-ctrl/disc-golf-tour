@@ -8,6 +8,7 @@ import com.discgolf.game.core.FlightState
 import com.discgolf.game.core.GameController
 import com.discgolf.game.core.Hole
 import com.discgolf.game.core.Phase
+import com.discgolf.game.core.Scenery
 import com.discgolf.game.core.Surface
 import com.discgolf.game.core.Vec3
 import com.discgolf.game.core.clamp
@@ -52,7 +53,7 @@ class GameRenderer(private val context: android.content.Context, private val ctl
     private val handDisc = FloatArray(16)
     private val lastHand = FloatArray(3)
     private lateinit var library: ModelLibrary
-    private val decor = HashMap<Hole, List<Decor>>()
+    private val decor = HashMap<Hole, List<Scenery.Item>>()
 
     private val proj = FloatArray(16)
     private val view = FloatArray(16)
@@ -254,42 +255,44 @@ class GameRenderer(private val context: android.content.Context, private val ctl
     private fun segHeadingDeg(a: Vec3, b: Vec3) = Math.toDegrees(atan2((b.x - a.x).toDouble(), (b.z - a.z).toDouble())).toFloat()
 
     /** The ground itself is the terrain mesh; this adds the tee pad on top of it. */
+    /** The ground itself is the terrain mesh; this adds the tee box on top of it: a timber frame round a rubber pad, and a sign. */
     private fun drawGround(h: Hole) {
         val dir0 = segHeadingDeg(h.path[0], h.path[1])
-        draw(meshes.cube, xf(h.tee.x, h.tee.y + 0.02f, h.tee.z, 1.3f, 0.04f, 2.6f, dir0), 0.52f, 0.56f, 0.50f)
+        val fx = h.path[1].x - h.path[0].x; val fz = h.path[1].z - h.path[0].z
+        val fl = sqrt(fx * fx + fz * fz).coerceAtLeast(0.01f)
+        val ux = fx / fl; val uz = fz / fl
+        val rx = uz; val rz = -ux
+        val t = h.tee
+        draw(meshes.cube, xf(t.x, t.y + 0.015f, t.z, 1.55f, 0.05f, 2.85f, dir0), 0.40f, 0.29f, 0.17f)   // timber frame
+        draw(meshes.cube, xf(t.x, t.y + 0.03f, t.z, 1.28f, 0.05f, 2.58f, dir0), 0.30f, 0.38f, 0.33f)    // pad
+        draw(meshes.cube, xf(t.x, t.y + 0.056f, t.z - 0.0f, 1.28f, 0.004f, 0.10f, dir0), 0.92f, 0.92f, 0.88f)  // throwing line
+        // Sign: post and board, to the golfer's right.
+        val sx = t.x + rx * 1.35f - ux * 0.4f; val sz = t.z + rz * 1.35f - uz * 0.4f
+        val sy = h.groundAt(sx, sz)
+        draw(meshes.cyl, xf(sx, sy, sz, 0.035f, 1.05f, 0.035f), 0.36f, 0.26f, 0.15f)
+        val bc = when (h.par) { 3 -> floatArrayOf(0.20f, 0.62f, 0.34f); 4 -> floatArrayOf(0.20f, 0.45f, 0.80f); else -> floatArrayOf(0.80f, 0.25f, 0.22f) }
+        draw(meshes.cube, xf(sx, sy + 0.92f, sz, 0.56f, 0.32f, 0.04f, dir0 + 180f), 0.93f, 0.92f, 0.86f)
+        draw(meshes.cube, xf(sx - ux * 0.012f, sy + 0.98f, sz - uz * 0.012f, 0.5f, 0.10f, 0.045f, dir0 + 180f), bc[0], bc[1], bc[2])
+        // Pips for the par.
+        for (k in 0 until h.par) {
+            val o = (k - (h.par - 1) / 2f) * 0.13f
+            draw(meshes.cube, xf(sx + rx * o - ux * 0.03f, sy + 0.83f, sz + rz * o - uz * 0.03f, 0.07f, 0.07f, 0.05f, dir0 + 180f), 0.25f, 0.25f, 0.28f)
+        }
     }
 
-
-    private class Decor(val model: String, val x: Float, val z: Float, val scale: Float, val rot: Float, val tint: Float)
 
     private val treeModels = arrayOf(
         "MapleTree_1", "MapleTree_2", "MapleTree_3", "MapleTree_4", "MapleTree_5",
         "BirchTree_1", "BirchTree_2", "BirchTree_3", "BirchTree_4", "BirchTree_5")
 
-    /** Bushes, flower clumps and grass tufts along the edges of the hole, chosen once per hole. */
-    private fun decorFor(h: Hole): List<Decor> = decor.getOrPut(h) {
-        val rnd = java.util.Random(900L + h.number * 77L)
-        val out = ArrayList<Decor>()
-        val bushes = arrayOf("Bush", "Bush_Large", "Bush_Flowers", "Bush_Large_Flowers")
-        val flowers = arrayOf("Flower_1_Clump", "Flower_2_Clump", "Flower_3_Clump", "Flower_4_Clump", "Flower_5_Clump")
-        val n = (h.length / 2.2f).toInt().coerceIn(60, 360)
-        for (i in 0 until n) {
-            val (p, d) = h.pointAt(rnd.nextFloat() * h.length)
-            val side = if (rnd.nextBoolean()) 1f else -1f
-            val off = h.fairwayWidth * 0.5f + 1.5f + rnd.nextFloat() * 9f
-            val x = p.x + d.z * off * side; val z = p.z - d.x * off * side
-            if (h.surfaceAt(x, z) == Surface.WATER) continue
-            if (h.trees.any { val dx = it.x - x; val dz = it.z - z; dx * dx + dz * dz < it.trunkR * it.trunkR * 9f }) continue
-            val r = rnd.nextFloat()
-            val model = if (r < 0.45f) bushes[rnd.nextInt(bushes.size)] else if (r < 0.80f) flowers[rnd.nextInt(flowers.size)] else if (r < 0.9f) "Grass_Large" else "Grass_Small"
-            out += Decor(model, x, z, 0.9f + rnd.nextFloat() * 0.9f, rnd.nextFloat() * 360f, 0.85f + rnd.nextFloat() * 0.3f)
-        }
-        out
-    }
+    /** Bushes, flower patches, rocks and logs around the hole, chosen once per hole. */
+    private fun decorFor(h: Hole): List<Scenery.Item> = decor.getOrPut(h) { Scenery.decorFor(h) }
 
-    private fun drawModel(name: String, x: Float, y: Float, z: Float, scale: Float, rotY: Float, tint: Float, sway: Float, leafKind: Int = 0) {
+    private fun drawModel(name: String, x: Float, y: Float, z: Float, scale: Float, rotY: Float, tint: Float, sway: Float, leafKind: Int = 0, roll: Float = 0f) {
         val model = library.get(name) ?: return
-        ms.identity().translate(x, y, z).rotate(rotY, 0f, 1f, 0f).scale(scale, scale, scale)
+        ms.identity().translate(x, y, z).rotate(rotY, 0f, 1f, 0f)
+        if (roll != 0f) ms.rotate(roll, 0f, 0f, 1f)
+        ms.scale(scale, scale, scale)
         val m = ms.top
         Matrix.multiplyMM(mvp, 0, vp, 0, m, 0)
         modelShader.draw(model, mvp, m, tint, tint, tint, sway, leafKind)
@@ -310,13 +313,26 @@ class GameRenderer(private val context: android.content.Context, private val ctl
             val scale = t.height / model.height * 0.85f
             drawModel(name, t.x, y0, t.z, scale, (idx * 83 % 360).toFloat(), tint, 0.25f * scale, if (idx % 9 == 4) 2 else if (idx % 5 == 1) 1 else 0)
         }
-        for (d in decorFor(h)) {
+        val decorList = decorFor(h)
+        for (d in decorList) {
+            if (d.model[0] == '@') continue
             val dx = d.x - camPos.x; val dz = d.z - camPos.z
             if (dx * dx + dz * dz > 160f * 160f) continue
-            drawModel(d.model, d.x, h.groundAt(d.x, d.z) - 0.02f, d.z, d.scale, d.rot, d.tint, 0.05f)
+            if (d.lie != 0f) drawModel(d.model, d.x, h.groundAt(d.x, d.z) + 0.22f * d.scale / 0.3f, d.z, d.scale, d.rot, d.tint, 0f, roll = d.lie)
+            else drawModel(d.model, d.x, h.groundAt(d.x, d.z) - 0.02f, d.z, d.scale, d.rot, d.tint, 0.05f)
         }
         drawNearGrass(h)
         useMainProgram()
+        // Boulders: two squashed spheres each, in the plain shader.
+        for (d in decorList) {
+            if (d.model != "@rock") continue
+            val dx = d.x - camPos.x; val dz = d.z - camPos.z
+            if (dx * dx + dz * dz > 110f * 110f) continue
+            val y = h.groundAt(d.x, d.z)
+            val c = 0.50f * d.tint
+            draw(meshes.sphere, xf(d.x, y + 0.12f * d.scale, d.z, d.scale, d.scale * 0.62f, d.scale * 1.2f, d.rot), c, c * 0.97f, c * 0.90f)
+            draw(meshes.sphere, xf(d.x + 0.45f * d.scale, y + 0.05f * d.scale, d.z + 0.2f * d.scale, d.scale * 0.55f, d.scale * 0.4f, d.scale * 0.6f, d.rot), c * 1.1f, c * 1.07f, c)
+        }
     }
 
     /** Grass tufts in the rough around the camera: a fixed grid, jittered by a hash, so they never flicker. */
@@ -392,16 +408,34 @@ class GameRenderer(private val context: android.content.Context, private val ctl
         val m = meshes
         val b = h.basket
         val y = b.y
-        draw(m.cyl, xf(b.x, y + 0f, b.z, 0.30f, 0.04f, 0.30f), 0.25f, 0.27f, 0.30f)
-        draw(m.cyl, xf(b.x, y + 0f, b.z, 0.035f, 1.40f, 0.035f), 0.70f, 0.72f, 0.76f)
-        draw(m.cyl, xf(b.x, y + 1.30f, b.z, 0.055f, 0.14f, 0.055f), 0.98f, 0.80f, 0.10f)
-        draw(m.ringThin, xf(b.x, y + 1.38f, b.z, 0.34f, 0.34f, 0.34f), 0.80f, 0.82f, 0.86f)
-        draw(m.ringThin, xf(b.x, y + 0.62f, b.z, 0.30f, 0.30f, 0.30f), 0.80f, 0.82f, 0.86f)
-        draw(m.cyl, xf(b.x, y + 0.55f, b.z, 0.30f, 0.03f, 0.30f), 0.55f, 0.58f, 0.62f)
+        val steel = 0.74f; val dark = 0.30f
+        // Base plate and a collar of trampled sand around it.
+        draw(m.cyl, xf(b.x, y + 0.005f, b.z, 0.42f, 0.02f, 0.42f), 0.62f, 0.58f, 0.46f)
+        draw(m.cyl, xf(b.x, y + 0.015f, b.z, 0.26f, 0.05f, 0.26f), dark, dark + 0.02f, dark + 0.05f)
+        // Pole, with a thicker foot.
+        draw(m.cyl, xf(b.x, y + 0f, b.z, 0.050f, 0.30f, 0.050f), 0.62f, 0.64f, 0.68f)
+        draw(m.cyl, xf(b.x, y + 0f, b.z, 0.035f, 1.45f, 0.035f), steel, steel + 0.02f, steel + 0.06f)
+        // Tray, its rim, and three struts holding it to the pole.
+        draw(m.cyl, xf(b.x, y + 0.55f, b.z, 0.31f, 0.03f, 0.31f), 0.52f, 0.55f, 0.60f)
+        draw(m.ringThin, xf(b.x, y + 0.58f, b.z, 0.31f, 0.8f, 0.31f), 0.80f, 0.82f, 0.86f)
+        for (k in 0 until 3) {
+            val a = (2.0 * PI * k / 3 + 0.5).toFloat()
+            draw(m.cyl, xf(b.x + cos(a) * 0.16f, y + 0.46f, b.z + sin(a) * 0.16f, 0.010f, 0.14f, 0.010f), 0.62f, 0.64f, 0.68f)
+        }
+        // Chains: an outer row hanging from the top band to the tray, and a shorter inner row.
         for (k in 0 until 12) {
             val a = (2.0 * PI * k / 12).toFloat()
-            draw(m.cyl, xf(b.x + cos(a) * 0.32f, y + 0.62f, b.z + sin(a) * 0.32f, 0.008f, 0.76f, 0.008f), 0.85f, 0.86f, 0.88f)
+            draw(m.cyl, xf(b.x + cos(a) * 0.30f, y + 0.60f, b.z + sin(a) * 0.30f, 0.0085f, 0.78f, 0.0085f), 0.86f, 0.87f, 0.90f)
         }
+        for (k in 0 until 8) {
+            val a = (2.0 * PI * (k + 0.5) / 8).toFloat()
+            draw(m.cyl, xf(b.x + cos(a) * 0.15f, y + 0.82f, b.z + sin(a) * 0.15f, 0.0075f, 0.56f, 0.0075f), 0.78f, 0.79f, 0.83f)
+        }
+        // Mid cage ring, top band (a fat yellow ring) and the little hat on the pole.
+        draw(m.ringThin, xf(b.x, y + 1.0f, b.z, 0.22f, 1f, 0.22f), 0.80f, 0.82f, 0.86f)
+        draw(m.ringThin, xf(b.x, y + 1.38f, b.z, 0.335f, 2.2f, 0.335f), 0.98f, 0.78f, 0.10f)
+        draw(m.ringThin, xf(b.x, y + 1.46f, b.z, 0.335f, 1.0f, 0.335f), 0.80f, 0.82f, 0.86f)
+        draw(m.cone, xf(b.x, y + 1.44f, b.z, 0.30f, 0.10f, 0.30f), 0.98f, 0.78f, 0.10f)
         // A tall flag so the pin can be found from the tee.
         draw(m.cyl, xf(b.x + 0.7f, y + 0f, b.z, 0.02f, 3.4f, 0.02f), 0.9f, 0.9f, 0.9f)
         draw(m.cube, xf(b.x + 0.7f, y + 3.15f, b.z + 0.3f, 0.03f, 0.32f, 0.6f), 0.95f, 0.35f, 0.15f)
@@ -513,9 +547,18 @@ class GameRenderer(private val context: android.content.Context, private val ctl
 
     private fun drawWater(h: Hole) {
         for (p in h.ponds) {
+            val dx = p.cx - camPos.x; val dz = p.cz - camPos.z
+            if (dx * dx + dz * dz > 260f * 260f) continue
             draw(meshes.disc, xf(p.cx, p.level + 0.03f, p.cz, p.rx * 1.02f, 1f, p.rz * 1.02f), 0.10f, 0.40f, 0.62f, 0.55f)
-            draw(meshes.disc, xf(p.cx, p.level + 0.04f, p.cz, p.rx * 0.97f, 1f, p.rz * 0.97f), 0.12f, 0.46f, 0.70f, 0.78f)
-            draw(meshes.disc, xf(p.cx, p.level + 0.05f, p.cz, p.rx * 0.70f, 1f, p.rz * 0.70f), 0.20f, 0.56f, 0.80f, 0.40f)
+            draw(meshes.disc, xf(p.cx, p.level + 0.04f, p.cz, p.rx * 0.97f, 1f, p.rz * 0.97f), 0.14f, 0.52f, 0.72f, 0.80f)
+            draw(meshes.disc, xf(p.cx, p.level + 0.05f, p.cz, p.rx * 0.62f, 1f, p.rz * 0.62f), 0.20f, 0.56f, 0.80f, 0.40f)
+            // Pale foam line along the shore, and two ripple rings that swell and fade out.
+            draw(meshes.ringThin, xf(p.cx, p.level + 0.06f, p.cz, p.rx * 0.985f, 0.5f, p.rz * 0.985f), 0.92f, 0.97f, 1.0f, 0.55f)
+            for (k in 0 until 2) {
+                val ph = ((clock * 0.12f + k * 0.5f + p.cx * 0.01f) % 1f)
+                val rr = 0.15f + 0.65f * ph
+                draw(meshes.ringThin, xf(p.cx, p.level + 0.07f, p.cz, p.rx * rr, 0.3f, p.rz * rr), 0.85f, 0.95f, 1f, 0.5f * (1f - ph))
+            }
         }
     }
 
