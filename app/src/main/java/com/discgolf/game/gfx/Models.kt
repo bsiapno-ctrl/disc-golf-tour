@@ -12,7 +12,7 @@ import kotlin.math.max
 import kotlin.math.sin
 
 /** One drawable piece of a model: a vertex array, how many indices it has, and its picture (texture). */
-class ModelPart(val vao: Int, val vbo: Int, val ebo: Int, val count: Int, val texture: Int)
+class ModelPart(val vao: Int, val vbo: Int, val ebo: Int, val count: Int, val texture: Int, val leaf: Boolean = false)
 
 /** A textured model read from a glTF file. [height] is how tall it is before any scaling, in its own units. */
 class Model(val parts: List<ModelPart>, val height: Float, val radius: Float) {
@@ -118,9 +118,12 @@ class ModelLibrary(private val context: Context) {
             val ib = ByteBuffer.allocateDirect(idx.size * 2).order(ByteOrder.nativeOrder()).asShortBuffer().put(idx); ib.position(0)
 
             val mat = map(materials[num(p, "material").toInt()])
+            var leaf = false
             val tex = (map(mat["pbrMetallicRoughness"])["baseColorTexture"] as? Map<*, *>)?.let { bt ->
                 val src = num(map(texs[num(bt, "index").toInt()]), "source").toInt()
-                texture(map(images[src])["uri"] as String)
+                val uri = map(images[src])["uri"] as String
+                leaf = uri.contains("Leaves")
+                texture(uri)
             } ?: 0
 
             val ids = IntArray(3)
@@ -134,7 +137,7 @@ class ModelLibrary(private val context: Context) {
             GLES30.glEnableVertexAttribArray(1); GLES30.glVertexAttribPointer(1, 3, GLES30.GL_FLOAT, false, 32, 12)
             GLES30.glEnableVertexAttribArray(2); GLES30.glVertexAttribPointer(2, 2, GLES30.GL_FLOAT, false, 32, 24)
             GLES30.glBindVertexArray(0)
-            parts += ModelPart(ids[0], ids[1], ids[2], idx.size, tex)
+            parts += ModelPart(ids[0], ids[1], ids[2], idx.size, tex, leaf)
         }
         return Model(parts, height, radius)
     }
@@ -153,6 +156,7 @@ class ModelShader {
     private val uSway = GLES30.glGetUniformLocation(prog, "uSway")
     private val uLean = GLES30.glGetUniformLocation(prog, "uLean")
     private val uFog = GLES30.glGetUniformLocation(prog, "uFogColor")
+    private val uLeaf = GLES30.glGetUniformLocation(prog, "uLeaf")
 
     fun begin(sun: FloatArray, camX: Float, camY: Float, camZ: Float, time: Float) {
         GLES30.glUseProgram(prog)
@@ -171,6 +175,7 @@ class ModelShader {
         GLES30.glUniform1f(uSway, 1f / model.height)
         GLES30.glUniform1f(uLean, sway)
         for (p in model.parts) {
+            GLES30.glUniform1f(uLeaf, if (p.leaf) 1f else 0f)
             GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, p.texture)
             GLES30.glBindVertexArray(p.vao)
             GLES30.glDrawElements(GLES30.GL_TRIANGLES, p.count, GLES30.GL_UNSIGNED_SHORT, 0)
@@ -213,10 +218,17 @@ uniform vec3 uLightDir;
 uniform vec3 uCamPos;
 uniform vec3 uTint;
 uniform vec3 uFogColor;
+uniform float uLeaf;
 out vec4 fragColor;
 void main() {
     vec4 t = texture(uTex, vUv);
     if (t.a < 0.45) discard;
+    if (uLeaf > 0.5) {
+        // Foliage is re-coloured to fresh, saturated greens whatever the picture says (maples ship in autumn colours).
+        float lum = dot(t.rgb, vec3(0.30, 0.59, 0.11));
+        float k = clamp(lum * 1.7, 0.0, 1.0);
+        t.rgb = mix(vec3(0.10, 0.36, 0.09), vec3(0.52, 0.80, 0.22), k * k);
+    }
     vec3 n = normalize(vNormal);
     if (!gl_FrontFacing) n = -n;
     vec3 l = normalize(uLightDir);
@@ -224,9 +236,9 @@ void main() {
     float diff = clamp(dot(n, l) * 0.6 + 0.4, 0.0, 1.0);
     vec3 sky = vec3(0.70, 0.80, 0.98);
     vec3 gnd = vec3(0.34, 0.38, 0.26);
-    vec3 amb = mix(gnd, sky, n.y * 0.5 + 0.5) * 0.55;
+    vec3 amb = mix(gnd, sky, n.y * 0.5 + 0.5) * 0.70;
     vec3 base = t.rgb * uTint;
-    vec3 lit = base * (amb + vec3(1.0, 0.96, 0.88) * diff * 0.85);
+    vec3 lit = base * (amb + vec3(1.0, 0.96, 0.88) * diff * 0.70);
     float d = length(vWorld - uCamPos);
     float fogAmt = smoothstep($FOG_START, $FOG_END, d);
     fragColor = vec4(mix(lit, uFogColor, fogAmt), 1.0);
