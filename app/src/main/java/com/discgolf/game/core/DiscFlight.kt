@@ -15,6 +15,10 @@ interface FlightEnvironment {
     fun frictionAt(p: Vec3): Float
     /** Let the world poke the disc: trees, chains, water. May change velocity, state, or flags. */
     fun resolve(flight: DiscFlight)
+    /** Ground height at this spot. Flat unless the course has terrain. */
+    fun groundAt(x: Float, z: Float): Float = 0f
+    /** Ground slope as (dh/dx, 0, dh/dz). */
+    fun gradientAt(x: Float, z: Float): Vec3 = Vec3.ZERO
 }
 
 enum class FlightState { FLYING, ROLLING, STOPPED, HOLED }
@@ -48,6 +52,9 @@ class DiscFlight(
     /** The chains only get one vote per throw. */
     var basketChecked = false
     var holed = false
+
+    /** Thrown as a roller: it is meant to land on its edge and roll, so it keeps much more of its speed. */
+    var rollerThrow = false
 
     /** Landing marker: where the disc first touched the ground. */
     var landing: Vec3? = null
@@ -97,7 +104,7 @@ class DiscFlight(
         val cl0 = Tuning.cl0Base + Tuning.cl0PerGlide * disc.glide
         var cl = (cl0 + Tuning.clAlpha * alpha) * (1f + 0.10f * (spin01 - 0.5f))
         if (alpha > Tuning.stallAlpha) cl *= max(0f, 1f - (alpha - Tuning.stallAlpha) * 3f)   // stall
-        val cd = Tuning.cd0 + Tuning.cdQuad * (alpha + 0.05f) * (alpha + 0.05f)
+        val cd = Tuning.cd0 * disc.dragScale + Tuning.cdQuad * (alpha + 0.05f) * (alpha + 0.05f)
 
         val q = 0.5f * AIR_DENSITY * speed * speed * AREA
         val liftDir = (n - vHat * n.dot(vHat)).normalized().let { if (it == Vec3.ZERO) n else it }
@@ -120,11 +127,11 @@ class DiscFlight(
 
         env.resolve(this)
         if (isDone) return
-        if (pos.y <= GROUND) land()
+        if (pos.y <= env.groundAt(pos.x, pos.z) + GROUND) land()
     }
 
     private fun land() {
-        pos = Vec3(pos.x, GROUND, pos.z)
+        pos = Vec3(pos.x, env.groundAt(pos.x, pos.z) + GROUND, pos.z)
         if (landing == null) landing = pos
         airDistance = pos.distanceXZ(start)
         events += FlightEvent.LANDED
@@ -133,12 +140,12 @@ class DiscFlight(
         val descent = atan2(-vel.y, max(h, 0.01f))
         val tilt = bank * hand
         // Anhyzer discs hit the ground on edge and roll; hyzers skid and stop.
-        val roller = tilt < -0.18f
-        var keep = if (roller) 0.62f else if (abs(tilt) < 0.18f) 0.30f else 0.16f
-        keep *= (1.1f - descent).coerceIn(0.25f, 1f)
+        val roller = tilt < -0.18f || rollerThrow
+        var keep = if (rollerThrow) 0.88f else if (roller) 0.62f else if (abs(tilt) < 0.18f) 0.30f else 0.16f
+        keep *= if (rollerThrow) (1.15f - descent * 0.5f).coerceIn(0.6f, 1f) else (1.1f - descent).coerceIn(0.25f, 1f)
         rollSpeed = h * keep
         rollDecel = if (roller) 2.2f else 4.0f
-        rollDrift = -hand * bank * 0.9f
+        rollDrift = -hand * bank * (if (rollerThrow) 0.3f else 0.9f)
         state = FlightState.ROLLING
         vel = headingToDir(heading) * rollSpeed
         env.resolve(this)
@@ -147,11 +154,20 @@ class DiscFlight(
     private fun roll(dt: Float) {
         val f = env.frictionAt(pos)
         rollSpeed -= rollDecel * f * dt
-        if (rollSpeed <= 0.25f) { state = FlightState.STOPPED; vel = Vec3.ZERO; return }
         if (rollSpeed > 0.8f) heading += rollDrift * dt
+        var v = headingToDir(heading) * max(rollSpeed, 0f)
+        // Gravity along the slope. Discs slide and roll rather than drop, so only part of it counts.
+        val g = env.gradientAt(pos.x, pos.z)
+        v = v - g * (G * SLOPE_PULL * dt)
+        val sp = v.lengthXZ()
+        val pull = G * SLOPE_PULL * g.lengthXZ()
+        // At rest unless the hill is steeper than friction can hold.
+        if (sp <= 0.25f && pull < rollDecel * f * 0.8f) { state = FlightState.STOPPED; vel = Vec3.ZERO; return }
+        rollSpeed = sp
+        if (sp > 0.05f) heading = dirToHeading(v)
         vel = headingToDir(heading) * rollSpeed
         pos = pos + vel * dt
-        pos = Vec3(pos.x, GROUND, pos.z)
+        pos = Vec3(pos.x, env.groundAt(pos.x, pos.z) + GROUND, pos.z)
         env.resolve(this)
     }
 
@@ -173,6 +189,8 @@ class DiscFlight(
         const val AREA = 0.0352f
         const val G = 9.81f
         const val GROUND = 0.03f
+        /** Share of gravity along a slope that acts on a rolling disc. */
+        const val SLOPE_PULL = 0.45f
         const val MAX_TIME = 40f
         const val RELEASE_HEIGHT = 1.30f
     }
@@ -183,7 +201,7 @@ object Tuning {
     var cl0Base = 0.08f
     var cl0PerGlide = 0.024f
     var clAlpha = 2.2f
-    var cd0 = 0.05f
+    var cd0 = 0.068f
     var cdQuad = 2.5f
     var kTurn = 0.09f
     var kFade = 0.07f
@@ -214,16 +232,27 @@ class ThrowSpec(
     val disc: DiscModel,
     val shape: ShotShape,
     val isPutt: Boolean,
+    /** Forehand (sidearm) throw: the disc spins the other way, so every curve is mirrored. */
+    val forehand: Boolean = false,
+    /** Fine adjustment of the launch angle, in degrees up (+) or down (-). */
+    val elevOffsetDeg: Float = 0f,
+    /** Fine adjustment of the release tilt, in degrees toward hyzer (+) or anhyzer (-). */
+    val bankOffsetDeg: Float = 0f,
 )
 
 object Launcher {
     const val PUTT_MAX_SPEED = 15.5f
     const val PUTT_MIN_SPEED = 3f
     const val DRIVE_MIN_SPEED = 4f
+    /** A sidearm throw is a little slower than a backhand for most players. */
+    const val FOREHAND_SPEED = 0.94f
+    const val FOREHAND_YAW = 1.18f
+    const val MAX_ELEV_DEG = 22f
+    const val MIN_ELEV_DEG = -4f
 
     /** Release speed in m/s for a given power 0..1. */
     fun launchSpeed(p: PlayerProfile, spec: ThrowSpec, power: Float, perfect: Boolean): Float {
-        val vMax = if (spec.isPutt) PUTT_MAX_SPEED else min(p.armSpeed(), spec.disc.speedLimit)
+        val vMax = (if (spec.isPutt) PUTT_MAX_SPEED else min(p.armSpeed(), spec.disc.speedLimit)) * (if (spec.forehand) FOREHAND_SPEED else 1f)
         val lo = if (spec.isPutt) PUTT_MIN_SPEED else DRIVE_MIN_SPEED
         val v = lo + (vMax - lo) * power
         return if (perfect) v * 1.02f else v
@@ -248,17 +277,21 @@ object Launcher {
         var maxYaw = lerp(11f, 4.5f, acc) * deg
         if (spec.isPutt) maxYaw *= 0.55f
         if (overcooked) maxYaw *= 1.6f
+        if (spec.forehand) maxYaw *= FOREHAND_YAW
         val jitter = lerp(2.2f, 0.7f, p.pct(Stat.SPIN)) * deg * (0.4f + 0.6f * power) * noise
 
         val heading = spec.aimHeading + accuracyError * maxYaw + jitter
-        val bank = spec.shape.bankDegrees * deg + accuracyError * 8f * deg
-        val elev = (if (spec.isPutt) Tuning.puttElevDeg else Tuning.driveElevDeg) * deg
+        val bank = ((spec.shape.bankDegrees + spec.bankOffsetDeg) * deg + accuracyError * 8f * deg).coerceIn(Tuning.bankMin, Tuning.bankMax)
+        val baseElev = (if (spec.isPutt) Tuning.puttElevDeg else Tuning.driveElevDeg) + spec.shape.elevDegrees
+        val elev = (baseElev + spec.elevOffsetDeg).coerceIn(MIN_ELEV_DEG, MAX_ELEV_DEG) * deg
         val nose = elev + (spec.shape.noseDegrees + Tuning.noseOverElevDeg) * deg
 
         val speed = launchSpeed(p, spec, power, perfect)
         val dir = Vec3(sin(heading) * cos(elev), sin(elev), cos(heading) * cos(elev))
-        val start = Vec3(spec.origin.x, DiscFlight.RELEASE_HEIGHT, spec.origin.z)
-        return DiscFlight(spec.disc, p.handedness.sign, p.pct(Stat.SPIN), start, dir * speed, bank, nose, env)
+        val start = Vec3(spec.origin.x, spec.origin.y + DiscFlight.RELEASE_HEIGHT, spec.origin.z)
+        val flight = DiscFlight(spec.disc, p.handedness.sign * (if (spec.forehand) -1f else 1f), p.pct(Stat.SPIN), start, dir * speed, bank, nose, env)
+        flight.rollerThrow = spec.shape.rolls
+        return flight
     }
 
     /** Flat-ground carry in metres for a perfect release, ignoring trees. Used by the caddie. */

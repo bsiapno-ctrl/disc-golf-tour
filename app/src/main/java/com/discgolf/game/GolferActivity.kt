@@ -45,7 +45,6 @@ class GolferActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        goImmersive()
         val saved = SaveStore.load(this)
         creating = saved == null
         p = saved ?: PlayerProfile("Rookie").also { it.applyArchetype(Archetype.ALLROUND) }
