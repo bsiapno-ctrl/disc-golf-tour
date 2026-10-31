@@ -292,7 +292,7 @@ class SkinShader {
         GLES30.glUniformMatrix4fv(uModel, 1, false, world, 0)
         // Cartoon outline: the model pushed out along its normals, back faces only, in near-black.
         GLES30.glEnable(GLES30.GL_CULL_FACE); GLES30.glCullFace(GLES30.GL_FRONT)
-        GLES30.glUniform1f(uOutline, 0.02f)
+        GLES30.glUniform1f(uOutline, 0.011f)
         for (p in model.parts) { GLES30.glBindVertexArray(p.vao); GLES30.glDrawElements(GLES30.GL_TRIANGLES, p.count, GLES30.GL_UNSIGNED_SHORT, 0) }
         GLES30.glDisable(GLES30.GL_CULL_FACE)
         GLES30.glUniform1f(uOutline, 0f)

@@ -578,6 +578,8 @@ class GameRenderer(private val context: android.content.Context, private val ctl
     }
 
     private fun drawTrail() {
+        // The last throw's trail belongs to the last throw: it is cleared from view while lining up the next one.
+        if (ctl.phase == Phase.INTRO || ctl.phase == Phase.AIMING || ctl.phase == Phase.CHARGING || ctl.phase == Phase.ACCURACY) return
         for (p in trail) draw(meshes.sphere, xf(p.x, p.y, p.z, 0.08f, 0.08f, 0.08f), 1f, 1f, 1f, 0.8f, 1f)
     }
 
