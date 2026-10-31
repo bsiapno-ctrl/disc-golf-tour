@@ -14,6 +14,8 @@ import com.discgolf.game.core.ProgressEvent
 import com.discgolf.game.core.Stat
 import com.discgolf.game.core.SwingMeter
 import com.discgolf.game.core.clamp
+import com.discgolf.game.core.Vec3
+import kotlin.math.abs
 import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.max
@@ -42,7 +44,9 @@ class HudView(context: Context, private val ctl: GameController) : View(context)
     private class Pop(val ev: ProgressEvent, var age: Float = 0f)
     private val pops = ArrayList<Pop>()
 
-    private val d = Ui.dp(context, 1f)
+    /** One design unit in pixels. Scaled so the layout (drawn for about 760 x 360 dp) fits whatever screen this is. */
+    private var d = Ui.dp(context, 1f)
+    private val baseDp = Ui.dp(context, 1f)
     private val p = Paint(Paint.ANTI_ALIAS_FLAG)
     private val r = RectF()
     private val r2 = RectF()
@@ -58,6 +62,11 @@ class HudView(context: Context, private val ctl: GameController) : View(context)
     private val shapePrev = RectF()
     private val shapeNext = RectF()
     private val menuRect = RectF()
+    private val handBtn = RectF()
+    private val angleMinus = RectF()
+    private val anglePlus = RectF()
+    private val tiltMinus = RectF()
+    private val tiltPlus = RectF()
     private val cardBtn = RectF()
     private val resumeBtn = RectF()
     private val quitBtn = RectF()
@@ -74,6 +83,7 @@ class HudView(context: Context, private val ctl: GameController) : View(context)
 
     override fun onSizeChanged(w: Int, h: Int, ow: Int, oh: Int) {
         val wf = w.toFloat(); val hf = h.toFloat()
+        d = baseDp * min(wf / baseDp / 760f, hf / baseDp / 360f).coerceIn(0.5f, 1.6f)
         actionC[0] = wf - 96 * d; actionC[1] = hf - 100 * d; actionC[2] = 70 * d
         aimL[0] = 52 * d; aimL[1] = hf - 52 * d; aimL[2] = 36 * d
         aimR[0] = 52 * d + 84 * d; aimR[1] = hf - 52 * d; aimR[2] = 36 * d
@@ -82,6 +92,13 @@ class HudView(context: Context, private val ctl: GameController) : View(context)
         discNext.set(cardRect.right - 40 * d, cardRect.top, cardRect.right, cardRect.bottom - 30 * d)
         shapePrev.set(cardRect.left, cardRect.bottom - 34 * d, cardRect.left + 70 * d, cardRect.bottom)
         shapeNext.set(cardRect.right - 70 * d, cardRect.bottom - 34 * d, cardRect.right, cardRect.bottom)
+        // Throw panel: backhand / forehand, launch angle and release tilt, to the right of the aim buttons.
+        val tx0 = 182 * d; val tx1 = 328 * d; val rowH = 29 * d; val ty = hf - 98 * d
+        handBtn.set(tx0, ty, tx1, ty + rowH)
+        angleMinus.set(tx1 - 96 * d, ty + rowH + 3 * d, tx1 - 68 * d, ty + 2 * rowH)
+        anglePlus.set(tx1 - 28 * d, ty + rowH + 3 * d, tx1, ty + 2 * rowH)
+        tiltMinus.set(tx1 - 96 * d, ty + 2 * rowH + 4 * d, tx1 - 68 * d, ty + 3 * rowH + 1 * d)
+        tiltPlus.set(tx1 - 28 * d, ty + 2 * rowH + 4 * d, tx1, ty + 3 * rowH + 1 * d)
         menuRect.set(wf - 126 * d, 10 * d, wf - 12 * d, 46 * d)
         cardBtn.set(wf - 126 * d, 52 * d, wf - 12 * d, 88 * d)
         resumeBtn.set(wf / 2f - 110 * d, hf / 2f - 18 * d, wf / 2f + 110 * d, hf / 2f + 32 * d)
@@ -138,6 +155,11 @@ class HudView(context: Context, private val ctl: GameController) : View(context)
                     discNext.contains(x, y) -> onDisc(1)
                     shapePrev.contains(x, y) -> onShape(-1)
                     shapeNext.contains(x, y) -> onShape(1)
+                    handBtn.contains(x, y) -> ctl.toggleForehand()
+                    angleMinus.contains(x, y) -> ctl.adjustAngle(-1)
+                    anglePlus.contains(x, y) -> ctl.adjustAngle(1)
+                    tiltMinus.contains(x, y) -> ctl.adjustTilt(-1)
+                    tiltPlus.contains(x, y) -> ctl.adjustTilt(1)
                     x > width * 0.62f && y > height * 0.3f && actionPointer < 0 -> { actionPointer = id; onAction(true) }
                 }
             }
@@ -235,10 +257,12 @@ class HudView(context: Context, private val ctl: GameController) : View(context)
         drawTopCentre(c, w)
         drawWind(c, w)
         drawMenuButtons(c)
+        drawMinimap(c, h)
 
         if (phase == Phase.AIMING || phase == Phase.CHARGING || phase == Phase.ACCURACY) {
             drawDiscCard(c)
             drawAimButtons(c)
+            drawThrowPanel(c)
             drawMeter(c, w, h)
             val label = when (phase) {
                 Phase.AIMING -> "HOLD"
@@ -313,6 +337,79 @@ class HudView(context: Context, private val ctl: GameController) : View(context)
         text(c, kind, cx, cy + 70 * d, 11f, Ui.WHITE, Paint.Align.CENTER, display = false)
     }
 
+
+    private val miniPath = Path()
+    private val miniRect = RectF()
+
+    /** Top-down map of the hole, turned so the basket is "up" from your lie. */
+    private fun drawMinimap(c: Canvas, h: Float) {
+        val hole = ctl.hole
+        val w = width.toFloat()
+        val top = 100 * d
+        val bottom = min(top + 190 * d, actionC[1] - actionC[2] - 10 * d)
+        if (bottom - top < 90 * d) return
+        miniRect.set(w - 12 * d - 112 * d, top, w - 12 * d, bottom)
+        panel(c, miniRect, 200)
+        val lie = ctl.lie
+        val up = (hole.basket - lie).flat().normalized()
+        val ux = up.x; val uz = up.z
+        val rx = uz; val rz = -ux
+        fun uOf(x: Float, z: Float) = (x - lie.x) * ux + (z - lie.z) * uz
+        fun vOf(x: Float, z: Float) = (x - lie.x) * rx + (z - lie.z) * rz
+        var uMin = 0f; var uMax = 1f; var vMax = 10f
+        val pts = ArrayList<Vec3>(hole.path); pts += lie
+        for (q in pts) {
+            uMin = min(uMin, uOf(q.x, q.z)); uMax = max(uMax, uOf(q.x, q.z)); vMax = max(vMax, abs(vOf(q.x, q.z)))
+        }
+        val pad = hole.fairwayWidth * 0.9f + 8f
+        val inner = RectF(miniRect.left + 6 * d, miniRect.top + 6 * d, miniRect.right - 6 * d, miniRect.bottom - 6 * d)
+        val s = min(inner.height() / (uMax - uMin + pad * 2f), inner.width() / (vMax * 2f + pad * 2f))
+        val cx = inner.centerX()
+        val cu = (uMin + uMax) / 2f
+        fun px(x: Float, z: Float) = cx + vOf(x, z) * s
+        fun py(x: Float, z: Float) = inner.centerY() - (uOf(x, z) - cu) * s
+
+        c.save()
+        miniRect.inset(2 * d, 2 * d)
+        path.reset(); path.addRoundRect(miniRect, 10 * d, 10 * d, Path.Direction.CW)
+        c.clipPath(path)
+        miniRect.inset(-2 * d, -2 * d)
+        p.style = Paint.Style.FILL; p.color = Color.rgb(58, 110, 52)
+        c.drawRect(miniRect, p)
+        // fairway ribbon
+        miniPath.reset()
+        hole.path.forEachIndexed { i, q -> if (i == 0) miniPath.moveTo(px(q.x, q.z), py(q.x, q.z)) else miniPath.lineTo(px(q.x, q.z), py(q.x, q.z)) }
+        p.style = Paint.Style.STROKE; p.strokeCap = Paint.Cap.ROUND; p.strokeJoin = Paint.Join.ROUND
+        p.strokeWidth = hole.fairwayWidth * s; p.color = Color.rgb(126, 190, 84)
+        c.drawPath(miniPath, p)
+        p.strokeCap = Paint.Cap.BUTT
+        // water
+        p.style = Paint.Style.FILL; p.color = Color.rgb(70, 160, 220)
+        for (pd in hole.ponds) {
+            path.reset()
+            for (k in 0 until 24) {
+                val a = k / 24f * 6.2832f
+                val x = pd.cx + cos(a) * pd.rx; val z = pd.cz + sin(a) * pd.rz
+                if (k == 0) path.moveTo(px(x, z), py(x, z)) else path.lineTo(px(x, z), py(x, z))
+            }
+            path.close(); c.drawPath(path, p)
+        }
+        // trees as dark dots
+        p.color = Color.argb(200, 24, 70, 34)
+        for (t in hole.trees) { val x = px(t.x, t.z); val y = py(t.x, t.z); if (miniRect.contains(x, y)) c.drawCircle(x, y, max(1.2f * d, t.canopyR * s * 0.6f), p) }
+        // aim line
+        val ax = sin(ctl.aimHeading); val az = cos(ctl.aimHeading)
+        p.style = Paint.Style.STROKE; p.strokeWidth = 1.5f * d; p.color = Ui.GOLD
+        c.drawLine(px(lie.x, lie.z), py(lie.x, lie.z), px(lie.x + ax * 60f, lie.z + az * 60f), py(lie.x + ax * 60f, lie.z + az * 60f), p)
+        // basket and lie
+        p.style = Paint.Style.FILL
+        p.color = Color.WHITE; c.drawCircle(px(hole.basket.x, hole.basket.z), py(hole.basket.x, hole.basket.z), 4.5f * d, p)
+        p.color = Ui.ORANGE; c.drawCircle(px(hole.basket.x, hole.basket.z), py(hole.basket.x, hole.basket.z), 3f * d, p)
+        p.color = Color.WHITE; c.drawCircle(px(lie.x, lie.z), py(lie.x, lie.z), 5f * d, p)
+        p.color = Ui.GOLD; c.drawCircle(px(lie.x, lie.z), py(lie.x, lie.z), 3.5f * d, p)
+        c.restore()
+    }
+
     private fun drawMenuButtons(c: Canvas) {
         pill(c, menuRect, Color.parseColor("#3A68B0"), Color.parseColor("#14396F"))
         text(c, "MENU", menuRect.centerX(), menuRect.centerY() + 6 * d, 15f, Ui.WHITE, Paint.Align.CENTER)
@@ -331,13 +428,43 @@ class HudView(context: Context, private val ctl: GameController) : View(context)
         c.drawCircle(cardRect.left + 64 * d, cardRect.top + 28 * d, 12 * d, p)
         text(c, "◀", discPrev.centerX(), discPrev.centerY() + 8 * d, 20f, Ui.GOLD, Paint.Align.CENTER)
         text(c, "▶", discNext.centerX(), discNext.centerY() + 8 * d, 20f, Ui.GOLD, Paint.Align.CENTER)
-        text(c, disc.displayName.uppercase(), cardRect.left + 94 * d, cardRect.top + 30 * d, 18f, Ui.WHITE)
-        text(c, if (ctl.isPutt) "PUTT" else disc.kind.uppercase(), cardRect.left + 94 * d, cardRect.top + 48 * d, 12f, Ui.METAL, display = false)
+        text(c, disc.displayName.uppercase(), cardRect.left + 94 * d, cardRect.top + 26 * d, 18f, Ui.WHITE)
+        text(c, if (ctl.isPutt) "PUTT" else disc.kind.uppercase(), cardRect.left + 94 * d, cardRect.top + 41 * d, 12f, Ui.METAL, display = false)
         val nums = "${disc.speed} | ${disc.glide} | ${disc.turn.toInt()} | ${disc.fade.toInt()}"
-        text(c, nums, cardRect.centerX(), cardRect.top + 68 * d, 15f, Ui.GOLD, Paint.Align.CENTER, display = false)
+        text(c, nums, cardRect.left + 94 * d, cardRect.top + 57 * d, 14f, Ui.GOLD, Paint.Align.LEFT, display = false)
         text(c, "◀", shapePrev.left + 20 * d, shapePrev.centerY() + 6 * d, 16f, Ui.GOLD, Paint.Align.CENTER)
         text(c, "▶", shapeNext.right - 20 * d, shapeNext.centerY() + 6 * d, 16f, Ui.GOLD, Paint.Align.CENTER)
         text(c, ctl.shape.label.uppercase(), cardRect.centerX(), shapePrev.centerY() + 6 * d, 15f, Ui.CYAN, Paint.Align.CENTER)
+    }
+
+    private fun drawThrowPanel(c: Canvas) {
+        val live = ctl.phase == Phase.AIMING
+        val a = if (live) 255 else 120
+        // backhand / forehand switch
+        r.set(handBtn)
+        pill(c, r, Color.parseColor(if (ctl.forehand) "#D9792B" else "#3A68B0"), Color.parseColor(if (ctl.forehand) "#8F4A12" else "#14396F"))
+        text(c, if (ctl.forehand) "FOREHAND" else "BACKHAND", r.centerX(), r.centerY() + 5 * d, 14f, Ui.WHITE, Paint.Align.CENTER)
+        // launch angle
+        val labelX = handBtn.left + 6 * d
+        text(c, "ANGLE", labelX, angleMinus.centerY() + 4 * d, 12f, Ui.METAL, display = false)
+        text(c, String.format("%.0f°", ctl.launchAngleDeg), (angleMinus.right + anglePlus.left) / 2f, angleMinus.centerY() + 5 * d, 14f, Ui.WHITE, Paint.Align.CENTER)
+        smallButton(c, angleMinus, "−", a); smallButton(c, anglePlus, "+", a)
+        // release tilt
+        text(c, "TILT", labelX, tiltMinus.centerY() + 4 * d, 12f, Ui.METAL, display = false)
+        val tilt = ctl.releaseTiltDeg
+        val tl = if (tilt > 0.5f) String.format("H%.0f°", tilt) else if (tilt < -0.5f) String.format("A%.0f°", -tilt) else "0°"
+        text(c, tl, (tiltMinus.right + tiltPlus.left) / 2f, tiltMinus.centerY() + 5 * d, 14f, Ui.CYAN, Paint.Align.CENTER)
+        smallButton(c, tiltMinus, "−", a); smallButton(c, tiltPlus, "+", a)
+    }
+
+    private fun smallButton(c: Canvas, rect: RectF, label: String, alpha: Int) {
+        p.style = Paint.Style.FILL
+        p.color = Color.argb(alpha, 20, 57, 111)
+        c.drawRoundRect(rect, 8 * d, 8 * d, p)
+        p.style = Paint.Style.STROKE; p.strokeWidth = 1.5f * d; p.color = Color.argb(alpha, 255, 255, 255)
+        c.drawRoundRect(rect, 8 * d, 8 * d, p)
+        p.style = Paint.Style.FILL
+        text(c, label, rect.centerX(), rect.centerY() + 6 * d, 18f, Ui.WHITE, Paint.Align.CENTER)
     }
 
     private fun drawAimButtons(c: Canvas) {
@@ -349,7 +476,7 @@ class HudView(context: Context, private val ctl: GameController) : View(context)
     private fun drawMeter(c: Canvas, w: Float, h: Float) {
         val phase = ctl.phase
         val m = ctl.meter
-        val left = 270 * d
+        val left = 342 * d
         val right = w - 190 * d
         val bw = right - left
         val power = if (m != null && (phase == Phase.CHARGING || phase == Phase.ACCURACY)) m.power else 0f
@@ -402,7 +529,6 @@ class HudView(context: Context, private val ctl: GameController) : View(context)
         val pinX = left + min(pin, 1f) * bw
         triangle(c, pinX, py - 6 * d, 7 * d, false, Ui.GOLD)
         text(c, if (pin > 1.001f) "PIN OUT OF RANGE" else "PIN", pinX, py - 16 * d, 12f, if (pin > 1.001f) Ui.ORANGE else Ui.GOLD, if (pin > 0.85f) Paint.Align.RIGHT else Paint.Align.CENTER, display = false)
-        text(c, "POWER ${(power * 100).toInt()}%", left + 8 * d, py + 56 * d, 11f, Ui.METAL, display = false)
 
         val hint = when (phase) {
             Phase.AIMING -> "AIM, THEN PRESS & HOLD — RELEASE TO SET POWER"
@@ -488,7 +614,8 @@ class HudView(context: Context, private val ctl: GameController) : View(context)
     private fun drawScorecard(c: Canvas, w: Float, h: Float, final: Boolean) {
         val course = ctl.course
         val n = course.size
-        val cw = 52 * d
+        // Long layouts (18 holes) shrink the columns to fit the screen.
+        val cw = minOf(52 * d, (w * 0.96f - 98 * d) / (n + 1))
         val pw = 14 * d * 2 + 70 * d + cw * (n + 1)
         val ph = if (final) 250 * d else 170 * d
         r.set(w / 2f - pw / 2f, h / 2f - ph / 2f - (if (final) 30 * d else 0f), w / 2f + pw / 2f, h / 2f + ph / 2f - (if (final) 30 * d else 0f))
