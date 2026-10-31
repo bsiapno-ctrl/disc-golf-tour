@@ -107,7 +107,7 @@ class GameRenderer(private val context: android.content.Context, private val ctl
 
     override fun onSurfaceChanged(gl: GL10?, width: Int, height: Int) {
         GLES30.glViewport(0, 0, width, height)
-        Matrix.perspectiveM(proj, 0, 56f, width.toFloat() / max(1, height).toFloat(), 0.5f, 700f)
+        Matrix.perspectiveM(proj, 0, 50f, width.toFloat() / max(1, height).toFloat(), 0.5f, 700f)
         // The world is X-right / Z-forward, which is mirrored compared with OpenGL's right-handed eye space.
         // Flip X on screen so that +X (the golfer's right) really appears on the right.
         Matrix.scaleM(proj, 0, -1f, 1f, 1f)
@@ -209,8 +209,8 @@ class GameRenderer(private val context: android.content.Context, private val ctl
             Phase.AIMING, Phase.CHARGING, Phase.ACCURACY -> {
                 val d = headingToDir(ctl.aimHeading)
                 val right = Vec3(d.z, 0f, -d.x)
-                tp = ctl.lie - d * 5.6f + right * 0.9f + up * 2.4f
-                tl = ctl.lie + d * 16f + up * 1.0f
+                tp = ctl.lie - d * 3.6f + right * 0.7f + up * 1.5f
+                tl = ctl.lie + d * 14f + up * 0.9f
             }
             Phase.FLIGHT -> {
                 val f = ctl.flight
@@ -307,7 +307,7 @@ class GameRenderer(private val context: android.content.Context, private val ctl
             val y0 = h.groundAt(t.x, t.z) - 0.1f
             val tint = 0.88f + ((idx * 37) % 30) / 100f
             if (model == null) { useMainProgram(); drawProceduralTree(h, idx, t); modelShader.begin(sun, camPos.x, camPos.y, camPos.z, clock); continue }
-            val scale = t.height / model.height * 1.25f
+            val scale = t.height / model.height * 0.95f
             drawModel(name, t.x, y0, t.z, scale, (idx * 83 % 360).toFloat(), tint, 0.25f * scale)
         }
         for (d in decorFor(h)) {

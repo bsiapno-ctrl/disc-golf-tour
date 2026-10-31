@@ -199,7 +199,7 @@ void main() {
     // Fine grain fades with distance so far ground does not shimmer.
     float fine = mix(vnoise(vWorld.xz * 3.5), 0.5, smoothstep(25.0, 90.0, dist));
 
-    vec3 rough = mix(vec3(0.16, 0.31, 0.11), vec3(0.27, 0.42, 0.15), broad);
+    vec3 rough = mix(vec3(0.30, 0.52, 0.15), vec3(0.42, 0.64, 0.19), broad);
     rough = mix(rough, vec3(0.38, 0.40, 0.17), smoothstep(0.58, 0.82, mid) * 0.55);   // dry, yellowed patches
     // Close up: individual blades (stretched noise at two scales) and speckle, fading before they would shimmer.
     float near = 1.0 - smoothstep(6.0, 55.0, dist);
@@ -210,10 +210,10 @@ void main() {
     rough *= 1.0 + detail;
     rough = mix(rough, rough * vec3(1.15, 1.2, 0.7), smoothstep(0.7, 0.95, speck) * near * 0.5);   // pale blade tips
 
-    vec3 fairway = mix(vec3(0.29, 0.54, 0.19), vec3(0.37, 0.61, 0.24), broad);
+    vec3 fairway = mix(vec3(0.50, 0.74, 0.22), vec3(0.58, 0.80, 0.27), broad);
     // Mowing stripes, fading out in the distance where they would alias.
-    float stripe = step(0.5, fract(vWorld.z / 6.0));
-    fairway *= 1.0 - 0.11 * stripe * (1.0 - smoothstep(60.0, 160.0, dist));
+    float stripe = smoothstep(0.42, 0.58, fract(vWorld.z / 9.0));
+    fairway *= 1.0 - 0.15 * stripe * (1.0 - smoothstep(60.0, 160.0, dist));
     fairway *= 0.94 + 0.12 * fine;
     fairway *= 1.0 + detail * 0.8;
 
@@ -233,8 +233,8 @@ void main() {
 
     // Light: sun plus sky-and-ground ambient.
     float diff = max(dot(n, normalize(uLightDir)), 0.0);
-    vec3 amb = mix(vec3(0.34, 0.38, 0.26), vec3(0.70, 0.80, 0.98), n.y * 0.5 + 0.5) * 0.62;
-    vec3 lit = col * (amb + vec3(1.0, 0.96, 0.88) * diff * 0.80);
+    vec3 amb = mix(vec3(0.46, 0.50, 0.34), vec3(0.78, 0.86, 1.0), n.y * 0.5 + 0.5) * 0.70;
+    vec3 lit = col * (amb + vec3(1.0, 0.95, 0.84) * diff * 0.62);
 
     float fog = smoothstep($FOG_START, $FOG_END, dist);
     fragColor = vec4(mix(lit, vec3($HORIZON_R, $HORIZON_G, $HORIZON_B), fog), 1.0);
