@@ -3,6 +3,9 @@ package com.discgolf.game.ui
 import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.LinearGradient
+import android.graphics.RadialGradient
+import android.graphics.Shader
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.RectF
@@ -37,9 +40,9 @@ class HudView(context: Context, private val ctl: GameController) : View(context)
     var paused = false
     var showCard = false
 
-    /** -1, 0, +1 while an aim button is held. Read by the activity every frame. */
-    var touchAim = 0
-        private set
+    /** -1..1 aim stick command (0 when released). Read by the activity every frame. */
+    val touchAim: Float get() = stick.output
+    private val stick = AimStick()
 
     private class Pop(val ev: ProgressEvent, var age: Float = 0f)
     private val pops = ArrayList<Pop>()
@@ -54,8 +57,6 @@ class HudView(context: Context, private val ctl: GameController) : View(context)
 
     // Hit areas (recomputed on layout)
     private val actionC = FloatArray(3)
-    private val aimL = FloatArray(3)
-    private val aimR = FloatArray(3)
     private val cardRect = RectF()
     private val discPrev = RectF()
     private val discNext = RectF()
@@ -72,8 +73,6 @@ class HudView(context: Context, private val ctl: GameController) : View(context)
     private val quitBtn = RectF()
 
     private var actionPointer = -1
-    private var leftPointer = -1
-    private var rightPointer = -1
 
     init { isFocusable = false }
 
@@ -81,26 +80,28 @@ class HudView(context: Context, private val ctl: GameController) : View(context)
     // Layout
     // ------------------------------------------------------------------
 
+    private var L: HudRects = HudLayout.compute(1f, 1f, 1f)
+
     override fun onSizeChanged(w: Int, h: Int, ow: Int, oh: Int) {
         val wf = w.toFloat(); val hf = h.toFloat()
-        d = baseDp * min(wf / baseDp / 760f, hf / baseDp / 360f).coerceIn(0.5f, 1.6f)
-        actionC[0] = wf - 96 * d; actionC[1] = hf - 100 * d; actionC[2] = 70 * d
-        aimL[0] = 52 * d; aimL[1] = hf - 52 * d; aimL[2] = 36 * d
-        aimR[0] = 52 * d + 84 * d; aimR[1] = hf - 52 * d; aimR[2] = 36 * d
-        cardRect.set(12 * d, hf - 188 * d, 12 * d + 236 * d, hf - 100 * d)
+        d = HudLayout.scale(wf, hf, baseDp)
+        L = HudLayout.compute(wf, hf, d)   // all panel rects come from this pure, unit-tested function
+        actionC[0] = L.actionCx; actionC[1] = L.actionCy; actionC[2] = L.actionR
+        stick.layout(70 * d, hf - 56 * d, 46 * d)
+        cardRect.set(L.discCard.l, L.discCard.t, L.discCard.r, L.discCard.b)
         discPrev.set(cardRect.left, cardRect.top, cardRect.left + 40 * d, cardRect.bottom - 30 * d)
         discNext.set(cardRect.right - 40 * d, cardRect.top, cardRect.right, cardRect.bottom - 30 * d)
         shapePrev.set(cardRect.left, cardRect.bottom - 34 * d, cardRect.left + 70 * d, cardRect.bottom)
         shapeNext.set(cardRect.right - 70 * d, cardRect.bottom - 34 * d, cardRect.right, cardRect.bottom)
-        // Throw panel: backhand / forehand, launch angle and release tilt, to the right of the aim buttons.
-        val tx0 = 182 * d; val tx1 = 328 * d; val rowH = 29 * d; val ty = hf - 98 * d
+        // Throw panel: backhand / forehand, launch angle and release tilt, to the right of the aim stick.
+        val tx0 = L.throwPanel.l; val tx1 = L.throwPanel.r; val rowH = 29 * d; val ty = L.throwPanel.t
         handBtn.set(tx0, ty, tx1, ty + rowH)
         angleMinus.set(tx1 - 96 * d, ty + rowH + 3 * d, tx1 - 68 * d, ty + 2 * rowH)
         anglePlus.set(tx1 - 28 * d, ty + rowH + 3 * d, tx1, ty + 2 * rowH)
         tiltMinus.set(tx1 - 96 * d, ty + 2 * rowH + 4 * d, tx1 - 68 * d, ty + 3 * rowH + 1 * d)
         tiltPlus.set(tx1 - 28 * d, ty + 2 * rowH + 4 * d, tx1, ty + 3 * rowH + 1 * d)
-        menuRect.set(wf - 126 * d, 10 * d, wf - 12 * d, 46 * d)
-        cardBtn.set(wf - 126 * d, 52 * d, wf - 12 * d, 88 * d)
+        menuRect.set(L.menu.l, L.menu.t, L.menu.r, L.menu.b)
+        cardBtn.set(L.cardBtn.l, L.cardBtn.t, L.cardBtn.r, L.cardBtn.b)
         resumeBtn.set(wf / 2f - 110 * d, hf / 2f - 18 * d, wf / 2f + 110 * d, hf / 2f + 32 * d)
         quitBtn.set(wf / 2f - 110 * d, hf / 2f + 44 * d, wf / 2f + 110 * d, hf / 2f + 94 * d)
     }
@@ -130,7 +131,8 @@ class HudView(context: Context, private val ctl: GameController) : View(context)
         when (e.actionMasked) {
             MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN -> down(id, e.getX(idx), e.getY(idx))
             MotionEvent.ACTION_UP, MotionEvent.ACTION_POINTER_UP -> up(id)
-            MotionEvent.ACTION_CANCEL -> { up(actionPointer); up(leftPointer); up(rightPointer) }
+            MotionEvent.ACTION_MOVE -> for (i in 0 until e.pointerCount) stick.move(e.getPointerId(i), e.getX(i))
+            MotionEvent.ACTION_CANCEL -> { up(actionPointer); up(stick.pointer) }
         }
         return true
     }
@@ -149,8 +151,7 @@ class HudView(context: Context, private val ctl: GameController) : View(context)
         when (ctl.phase) {
             Phase.AIMING -> {
                 when {
-                    inCircle(aimL, x, y) -> { leftPointer = id; touchAim = -1 }
-                    inCircle(aimR, x, y) -> { rightPointer = id; touchAim = 1 }
+                    !stick.active && stick.hitsFixed(x, y) -> stick.down(id, x, y, false)
                     discPrev.contains(x, y) -> onDisc(-1)
                     discNext.contains(x, y) -> onDisc(1)
                     shapePrev.contains(x, y) -> onShape(-1)
@@ -160,6 +161,7 @@ class HudView(context: Context, private val ctl: GameController) : View(context)
                     anglePlus.contains(x, y) -> ctl.adjustAngle(1)
                     tiltMinus.contains(x, y) -> ctl.adjustTilt(-1)
                     tiltPlus.contains(x, y) -> ctl.adjustTilt(1)
+                    !stick.active && x < width * 0.35f && y > height * 0.3f -> stick.down(id, x, y, true)
                     x > width * 0.62f && y > height * 0.3f && actionPointer < 0 -> { actionPointer = id; onAction(true) }
                 }
             }
@@ -172,64 +174,92 @@ class HudView(context: Context, private val ctl: GameController) : View(context)
     private fun up(id: Int) {
         if (id < 0) return
         if (id == actionPointer) { actionPointer = -1; onAction(false) }
-        if (id == leftPointer) { leftPointer = -1; touchAim = if (rightPointer >= 0) 1 else 0 }
-        if (id == rightPointer) { rightPointer = -1; touchAim = if (leftPointer >= 0) -1 else 0 }
+        stick.up(id)
     }
 
     // ------------------------------------------------------------------
     // Drawing helpers
     // ------------------------------------------------------------------
 
-    private fun text(c: Canvas, s: String, x: Float, y: Float, sizeDp: Float, color: Int, align: Paint.Align = Paint.Align.LEFT, display: Boolean = true) {
-        p.style = Paint.Style.FILL
+    private fun text(c: Canvas, s: String, x: Float, y: Float, sizeDp: Float, color: Int, align: Paint.Align = Paint.Align.LEFT, display: Boolean = true, maxW: Float = 0f) {
         p.typeface = if (display) Ui.DISPLAY else Ui.BODY
         p.textSize = sizeDp * d
+        if (maxW > 0f) { val tw = p.measureText(s); if (tw > maxW) p.textSize = sizeDp * d * maxW / tw }
         p.textAlign = align
-        p.setShadowLayer(3f * d, 0f, 1.5f * d, Color.argb(190, 0, 0, 0))
+        // chunky cartoon outline, then drop shadow, then fill
+        p.style = Paint.Style.STROKE
+        p.strokeJoin = Paint.Join.ROUND
+        p.strokeWidth = max(2f, sizeDp * 0.22f) * d
+        p.color = Color.argb(235, 6, 16, 40)
+        c.drawText(s, x, y, p)
+        p.style = Paint.Style.FILL
+        p.setShadowLayer(2f * d, 0f, 2f * d, Color.argb(160, 0, 0, 0))
         p.color = color
         c.drawText(s, x, y, p)
         p.clearShadowLayer()
     }
 
     private fun panel(c: Canvas, rect: RectF, alpha: Int = 215, stroke: Int = Ui.GOLD) {
+        val rad = 16 * d
+        // drop shadow
+        r2.set(rect.left, rect.top + 4 * d, rect.right, rect.bottom + 4 * d)
         p.style = Paint.Style.FILL
-        p.color = Color.argb(alpha, 8, 22, 48)
-        c.drawRoundRect(rect, 12 * d, 12 * d, p)
-        // glossy top half
-        r2.set(rect.left + 2 * d, rect.top + 2 * d, rect.right - 2 * d, rect.centerY())
-        p.color = Color.argb(alpha / 6, 255, 255, 255)
-        c.drawRoundRect(r2, 10 * d, 10 * d, p)
+        p.color = Color.argb(110, 0, 0, 0)
+        c.drawRoundRect(r2, rad, rad, p)
+        // body with vertical gradient
+        p.shader = LinearGradient(0f, rect.top, 0f, rect.bottom,
+            Color.argb(alpha, 34, 78, 150), Color.argb(alpha, 8, 22, 52), Shader.TileMode.CLAMP)
+        c.drawRoundRect(rect, rad, rad, p)
+        p.shader = null
+        // gloss band
+        r2.set(rect.left + 3 * d, rect.top + 3 * d, rect.right - 3 * d, rect.top + rect.height() * 0.42f)
+        p.color = Color.argb(alpha / 5, 255, 255, 255)
+        c.drawRoundRect(r2, rad - 3 * d, rad - 3 * d, p)
+        // thick light outline, coloured inner rim
         p.style = Paint.Style.STROKE
+        p.strokeWidth = 4 * d
+        p.color = Color.argb(240, 255, 255, 255)
+        c.drawRoundRect(rect, rad, rad, p)
+        r2.set(rect); r2.inset(2.5f * d, 2.5f * d)
         p.strokeWidth = 2 * d
         p.color = stroke
-        c.drawRoundRect(rect, 12 * d, 12 * d, p)
+        c.drawRoundRect(r2, rad - 2 * d, rad - 2 * d, p)
         p.style = Paint.Style.FILL
     }
 
     private fun pill(c: Canvas, rect: RectF, top: Int, bottom: Int) {
+        val rad = rect.height() / 2f
+        r2.set(rect.left, rect.top + 3 * d, rect.right, rect.bottom + 3 * d)
         p.style = Paint.Style.FILL
-        p.color = bottom
-        c.drawRoundRect(rect, rect.height() / 2f, rect.height() / 2f, p)
-        r2.set(rect.left, rect.top, rect.right, rect.centerY())
-        p.color = top
-        c.drawRoundRect(r2, rect.height() / 2f, rect.height() / 2f, p)
-        p.style = Paint.Style.STROKE; p.strokeWidth = 2 * d; p.color = Color.argb(220, 255, 255, 255)
-        c.drawRoundRect(rect, rect.height() / 2f, rect.height() / 2f, p)
+        p.color = Color.argb(110, 0, 0, 0)
+        c.drawRoundRect(r2, rad, rad, p)
+        p.shader = LinearGradient(0f, rect.top, 0f, rect.bottom, top, bottom, Shader.TileMode.CLAMP)
+        c.drawRoundRect(rect, rad, rad, p)
+        p.shader = null
+        r2.set(rect.left + 4 * d, rect.top + 2 * d, rect.right - 4 * d, rect.centerY())
+        p.color = Color.argb(70, 255, 255, 255)
+        c.drawRoundRect(r2, rad, rad, p)
+        p.style = Paint.Style.STROKE; p.strokeWidth = 3 * d; p.color = Color.WHITE
+        c.drawRoundRect(rect, rad, rad, p)
         p.style = Paint.Style.FILL
     }
 
     private fun roundButton(c: Canvas, cx: Float, cy: Float, rad: Float, label: String, active: Boolean, color: Int) {
         p.style = Paint.Style.FILL
-        p.color = Ui.darken(color, 0.55f)
-        c.drawCircle(cx, cy + 4 * d, rad, p)
-        p.color = if (active) Ui.darken(color, 0.85f) else color
-        c.drawCircle(cx, cy, rad, p)
-        p.color = Color.argb(70, 255, 255, 255)
-        c.drawCircle(cx, cy - rad * 0.28f, rad * 0.68f, p)
-        p.style = Paint.Style.STROKE; p.strokeWidth = 3 * d; p.color = Color.WHITE
-        c.drawCircle(cx, cy, rad, p)
+        p.color = Color.argb(110, 0, 0, 0)
+        c.drawCircle(cx, cy + 7 * d, rad, p)
+        p.color = Ui.darken(color, 0.5f)
+        c.drawCircle(cx, cy + (if (active) 2 else 5) * d, rad, p)
+        val base = if (active) Ui.darken(color, 0.85f) else color
+        p.shader = RadialGradient(cx, cy - rad * 0.4f, rad * 1.5f, Ui.darken(base, 1.0f), Ui.darken(base, 0.7f), Shader.TileMode.CLAMP)
+        c.drawCircle(cx, cy + (if (active) 3 else 0) * d, rad, p)
+        p.shader = null
+        p.color = Color.argb(90, 255, 255, 255)
+        c.drawOval(cx - rad * 0.62f, cy - rad * 0.9f, cx + rad * 0.62f, cy - rad * 0.12f, p)
+        p.style = Paint.Style.STROKE; p.strokeWidth = 4 * d; p.color = Color.WHITE
+        c.drawCircle(cx, cy + (if (active) 3 else 0) * d, rad, p)
         p.style = Paint.Style.FILL
-        text(c, label, cx, cy + 7 * d, 20f, Ui.NAVY, Paint.Align.CENTER)
+        text(c, label, cx, cy + 7 * d, 20f, Color.WHITE, Paint.Align.CENTER)
     }
 
     private fun triangle(c: Canvas, x: Float, y: Float, size: Float, up: Boolean, color: Int) {
@@ -253,9 +283,10 @@ class HudView(context: Context, private val ctl: GameController) : View(context)
 
         if (phase == Phase.ROUND_DONE) { drawRoundDone(c, w, h); drawPopups(c, w); return }
 
-        drawTopLeft(c)
-        drawTopCentre(c, w)
-        drawWind(c, w)
+        drawHoleBanner(c)
+        drawDistChip(c)
+        drawScorePanel(c, w)
+        drawWind(c)
         drawMenuButtons(c)
         drawMinimap(c, h)
 
@@ -263,7 +294,7 @@ class HudView(context: Context, private val ctl: GameController) : View(context)
             drawDiscCard(c)
             drawAimButtons(c)
             drawThrowPanel(c)
-            drawMeter(c, w, h)
+            drawMeter(c)
             val label = when (phase) {
                 Phase.AIMING -> "HOLD"
                 Phase.CHARGING -> "RELEASE"
@@ -284,59 +315,181 @@ class HudView(context: Context, private val ctl: GameController) : View(context)
         if (paused) drawPause(c, w, h)
     }
 
-    private fun drawTopLeft(c: Canvas) {
-        val hole = ctl.hole
-        r.set(12 * d, 10 * d, 12 * d + 250 * d, 10 * d + 84 * d)
-        panel(c, r)
-        text(c, "HOLE ${hole.number}  ·  PAR ${hole.par}", r.left + 14 * d, r.top + 26 * d, 17f, Ui.GOLD)
-        text(c, hole.name.uppercase(), r.left + 14 * d, r.top + 46 * d, 12f, Ui.METAL, display = false)
-        text(c, "${ctl.distanceToPin.toInt()} m", r.left + 14 * d, r.top + 74 * d, 28f, Ui.WHITE)
-        text(c, "TO PIN", r.left + 112 * d, r.top + 74 * d, 12f, Ui.METAL, display = false)
-        text(c, "THROW ${ctl.strokes + if (ctl.phase == Phase.HOLE_DONE || ctl.phase == Phase.RESULT) 0 else 1}", r.right - 12 * d, r.top + 74 * d, 14f, Ui.GOLD, Paint.Align.RIGHT)
-    }
+    // ------------------------------------------------------------------
+    // Cartoon panels
+    // ------------------------------------------------------------------
 
-    private fun drawTopCentre(c: Canvas, w: Float) {
-        r.set(w / 2f - 90 * d, 10 * d, w / 2f + 90 * d, 44 * d)
-        panel(c, r, 190)
-        val rel = ctl.relativeToPar()
-        val s = if (rel == 0) "E" else if (rel > 0) "+$rel" else "$rel"
-        text(c, "ROUND  $s", r.centerX(), r.top + 24 * d, 17f, if (rel < 0) Ui.GREEN else if (rel > 0) Ui.ORANGE else Ui.WHITE, Paint.Align.CENTER)
-        text(c, "LV ${ctl.profile.level}  ${ctl.profile.name.uppercase()}", r.centerX(), r.bottom + 16 * d, 12f, Ui.METAL, Paint.Align.CENTER, display = false)
-    }
-
-    private fun drawWind(c: Canvas, w: Float) {
-        val cx = w - 150 * d - 40 * d
-        val cy = 52 * d
-        // Move left of the menu buttons.
-        val wx = ctl.wind.x; val wz = ctl.wind.z
-        val speed = sqrt(wx * wx + wz * wz)
-        val hd = ctl.aimHeading
-        val fx = sin(hd); val fz = cos(hd)
-        val rx = cos(hd); val rz = -sin(hd)
-        val along = wx * fx + wz * fz
-        val across = wx * rx + wz * rz
-        val ang = atan2(across, along)   // 0 = blowing away from you (tailwind), clockwise positive
+    /** Chunky toon plate: dark outline, bright vertical gradient, gloss, thick white rim. */
+    private fun toon(c: Canvas, x0: Float, y0: Float, x1: Float, y1: Float, rad: Float, top: Int, bottom: Int) {
+        r2.set(x0, y0 + 4 * d, x1, y1 + 4 * d)
+        p.style = Paint.Style.FILL; p.color = Color.argb(100, 0, 0, 0)
+        c.drawRoundRect(r2, rad, rad, p)
+        r2.set(x0, y0, x1, y1)
+        p.style = Paint.Style.STROKE; p.strokeWidth = 7 * d; p.color = Color.argb(235, 6, 16, 40)
+        c.drawRoundRect(r2, rad, rad, p)
         p.style = Paint.Style.FILL
-        p.color = Color.argb(215, 8, 22, 48)
-        c.drawCircle(cx, cy, 36 * d, p)
-        p.style = Paint.Style.STROKE; p.strokeWidth = 2 * d; p.color = Ui.GOLD
-        c.drawCircle(cx, cy, 36 * d, p)
+        p.shader = LinearGradient(0f, y0, 0f, y1, top, bottom, Shader.TileMode.CLAMP)
+        c.drawRoundRect(r2, rad, rad, p)
+        p.shader = null
+        p.color = Color.argb(60, 255, 255, 255)
+        r2.set(x0 + 4 * d, y0 + 3 * d, x1 - 4 * d, y0 + (y1 - y0) * 0.45f)
+        c.drawRoundRect(r2, rad * 0.8f, rad * 0.8f, p)
+        r2.set(x0, y0, x1, y1)
+        p.style = Paint.Style.STROKE; p.strokeWidth = 3 * d; p.color = Color.WHITE
+        c.drawRoundRect(r2, rad, rad, p)
+        p.style = Paint.Style.FILL
+    }
+
+    private fun toon(c: Canvas, rc: HRect, rad: Float, top: Int, bottom: Int) = toon(c, rc.l, rc.t, rc.r, rc.b, rad, top, bottom)
+
+    /** Dark inset slot used as the track of the meters. */
+    private fun trough(c: Canvas, l: Float, t: Float, rt: Float, b: Float) {
+        val rad = (b - t) / 2f
+        r2.set(l, t, rt, b)
+        p.style = Paint.Style.FILL; p.color = Color.argb(240, 5, 12, 30)
+        c.drawRoundRect(r2, rad, rad, p)
+        p.style = Paint.Style.STROKE; p.strokeWidth = 3 * d; p.color = Color.WHITE
+        c.drawRoundRect(r2, rad, rad, p)
+        p.style = Paint.Style.FILL
+    }
+
+    /** Rounded little stat chip: tiny label over a chunky value. */
+    private fun statChip(c: Canvas, x0: Float, y0: Float, x1: Float, y1: Float, color: Int, label: String, value: String) {
+        toon(c, x0, y0, x1, y1, 8 * d, Ui.darken(color, 1f), Ui.darken(color, 0.6f))
+        text(c, label, (x0 + x1) / 2f, y0 + 9 * d, 7f, Ui.WHITE, Paint.Align.CENTER, display = false)
+        text(c, value, (x0 + x1) / 2f, y1 - 5 * d, 14f, Ui.WHITE, Paint.Align.CENTER, maxW = (x1 - x0) - 6 * d)
+    }
+
+    /** Fat arrow pointing up from (cx,cy); caller rotates the canvas. */
+    private fun bigArrow(c: Canvas, cx: Float, cy: Float, len: Float, half: Float, color: Int) {
+        path.reset()
+        val head = half * 2.2f
+        path.moveTo(cx, cy - len)
+        path.lineTo(cx + half * 1.8f, cy - len + head)
+        path.lineTo(cx + half * 0.7f, cy - len + head)
+        path.lineTo(cx + half * 0.7f, cy + len * 0.55f)
+        path.lineTo(cx - half * 0.7f, cy + len * 0.55f)
+        path.lineTo(cx - half * 0.7f, cy - len + head)
+        path.lineTo(cx - half * 1.8f, cy - len + head)
+        path.close()
+        p.style = Paint.Style.FILL; p.color = color
+        c.drawPath(path, p)
+        p.style = Paint.Style.STROKE; p.strokeJoin = Paint.Join.ROUND; p.strokeWidth = 2.5f * d; p.color = Color.argb(240, 6, 16, 40)
+        c.drawPath(path, p)
+        p.style = Paint.Style.FILL
+    }
+
+    /** Angle (radians, clockwise, 0 = straight ahead of the current aim) of a world vector. */
+    private fun relAngle(vx: Float, vz: Float): Float {
+        val hd = ctl.aimHeading
+        val along = vx * sin(hd) + vz * cos(hd)
+        val across = vx * cos(hd) - vz * sin(hd)
+        return atan2(across, along)
+    }
+
+    // (1) hole / par banner with the big hole-number badge
+    private fun drawHoleBanner(c: Canvas) {
+        val hole = ctl.hole
+        val b = L.holeBanner
+        toon(c, b, 16 * d, Color.parseColor("#3C86E6"), Color.parseColor("#14439A"))
+        val bcx = b.l + 31 * d; val bcy = (b.t + b.b) / 2f; val br = 23 * d
+        p.style = Paint.Style.FILL; p.color = Color.argb(110, 0, 0, 0)
+        c.drawCircle(bcx, bcy + 3 * d, br, p)
+        p.shader = RadialGradient(bcx, bcy - br * 0.5f, br * 1.6f, Color.parseColor("#FFE680"), Ui.GOLD_DARK, Shader.TileMode.CLAMP)
+        c.drawCircle(bcx, bcy, br, p)
+        p.shader = null
+        p.style = Paint.Style.STROKE; p.strokeWidth = 3 * d; p.color = Color.WHITE
+        c.drawCircle(bcx, bcy, br, p)
+        p.strokeWidth = 1.5f * d; p.color = Color.argb(200, 6, 16, 40)
+        c.drawCircle(bcx, bcy, br - 4 * d, p)
+        p.style = Paint.Style.FILL
+        text(c, "${hole.number}", bcx, bcy + 9 * d, 26f, Ui.WHITE, Paint.Align.CENTER, maxW = 2 * br * 0.8f)
+        val tx = b.l + 62 * d
+        text(c, "PAR ${hole.par}", tx, b.t + 27 * d, 20f, Ui.GOLD, maxW = b.r - 12 * d - tx)
+        val sub = if (ctl.isPutt) (if (ctl.distanceToPin <= 4f) "CHAINS" else "PUTT · CIRCLE ${ctl.puttCircle}") else hole.name.uppercase()
+        text(c, sub, tx, b.t + 47 * d, 12f, if (ctl.isPutt) Ui.CYAN else Ui.WHITE, display = false, maxW = b.r - 12 * d - tx)
+    }
+
+    // (6) distance-to-pin chip with a compass arrow toward the basket
+    private fun drawDistChip(c: Canvas) {
+        val b = L.distChip
+        toon(c, b, 14 * d, Color.parseColor("#33C46E"), Color.parseColor("#12703C"))
+        val lie = ctl.lie; val bk = ctl.hole.basket
+        val ang = relAngle(bk.x - lie.x, bk.z - lie.z)
+        val cx = b.l + 17 * d; val cy = (b.t + b.b) / 2f
         c.save()
         c.rotate(Math.toDegrees(ang.toDouble()).toFloat(), cx, cy)
-        val len = (10f + min(speed, 6f) * 3.2f) * d
-        p.style = Paint.Style.STROKE; p.strokeWidth = 4 * d; p.color = Ui.CYAN
-        c.drawLine(cx, cy + len * 0.6f, cx, cy - len, p)
-        triangle(c, cx, cy - len - 2 * d, 6 * d, true, Ui.CYAN)
+        bigArrow(c, cx, cy, 9 * d, 3.2f * d, Ui.WHITE)
         c.restore()
-        text(c, String.format("%.1f m/s", speed), cx, cy + 56 * d, 12f, Ui.METAL, Paint.Align.CENTER, display = false)
+        text(c, "${ctl.distanceToPin.toInt()} m", b.l + 34 * d, cy + 7 * d, 19f, Ui.WHITE, maxW = 62 * d)
+        text(c, "TO PIN", b.r - 10 * d, cy + 4 * d, 10f, Color.parseColor("#D9FFE6"), Paint.Align.RIGHT, display = false)
+    }
+
+    // (5) strokes / par / total-vs-par panel
+    private fun drawScorePanel(c: Canvas, w: Float) {
+        val b = L.scorePanel
+        toon(c, b, 14 * d, Color.parseColor("#3C86E6"), Color.parseColor("#14439A"))
+        val throwNo = ctl.strokes + if (ctl.phase == Phase.HOLE_DONE || ctl.phase == Phase.RESULT) 0 else 1
+        val rel = ctl.relativeToPar()
+        val relS = if (rel == 0) "E" else if (rel > 0) "+$rel" else "$rel"
+        val relCol = if (rel < 0) Ui.GREEN else if (rel > 0) Ui.ORANGE else Ui.WHITE
+        val cw = b.w / 3f
+        val labels = arrayOf("THROW", "PAR", "TOTAL")
+        val values = arrayOf("$throwNo", "${ctl.hole.par}", relS)
+        val cols = intArrayOf(Ui.GOLD, Ui.WHITE, relCol)
+        for (i in 0..2) {
+            val cx = b.l + cw * (i + 0.5f)
+            text(c, labels[i], cx, b.t + 16 * d, 9f, Ui.METAL, Paint.Align.CENTER, display = false)
+            text(c, values[i], cx, b.t + 42 * d, 24f, cols[i], Paint.Align.CENTER, maxW = cw - 10 * d)
+            if (i > 0) {
+                p.style = Paint.Style.FILL; p.color = Color.argb(120, 255, 255, 255)
+                c.drawRect(b.l + cw * i - 1 * d, b.t + 9 * d, b.l + cw * i + 1 * d, b.b - 9 * d, p)
+            }
+        }
+        text(c, "LV ${ctl.profile.level}  ${ctl.profile.name.uppercase()}", b.centerXf(), b.b + 17 * d, 12f, Ui.METAL, Paint.Align.CENTER, display = false, maxW = b.w)
+    }
+
+    // (2) wind compass dial: arrow rotates relative to your aim, speed number underneath
+    private fun drawWind(c: Canvas) {
+        val b = L.windPanel
+        val wx = ctl.wind.x; val wz = ctl.wind.z
+        val speed = sqrt(wx * wx + wz * wz)
+        val ang = relAngle(wx, wz)   // 0 = tailwind (blowing away from you), clockwise positive
+        val hd = ctl.aimHeading
+        val along = wx * sin(hd) + wz * cos(hd)
+        val across = wx * cos(hd) - wz * sin(hd)
+        toon(c, b, 16 * d, Color.parseColor("#3C86E6"), Color.parseColor("#14439A"))
+        val cx = b.centerXf(); val cy = b.t + 37 * d; val rad = 29 * d
+        p.style = Paint.Style.FILL
+        p.shader = RadialGradient(cx, cy - rad * 0.4f, rad * 1.5f, Color.parseColor("#FFFFFF"), Color.parseColor("#9FC4F0"), Shader.TileMode.CLAMP)
+        c.drawCircle(cx, cy, rad, p)
+        p.shader = null
+        p.style = Paint.Style.STROKE; p.strokeWidth = 3 * d; p.color = Color.argb(240, 6, 16, 40)
+        c.drawCircle(cx, cy, rad, p)
+        // compass ticks: bold at the four points, small between
+        p.strokeWidth = 2 * d
+        for (k in 0 until 8) {
+            val a = k * 0.7853982f
+            val i0 = rad * (if (k % 2 == 0) 0.74f else 0.84f)
+            p.color = Color.argb(200, 20, 57, 111)
+            c.drawLine(cx + sin(a) * i0, cy - cos(a) * i0, cx + sin(a) * rad * 0.94f, cy - cos(a) * rad * 0.94f, p)
+        }
+        p.style = Paint.Style.FILL
+        val col = if (speed < 0.6f) Ui.METAL_DARK else if (speed < 3f) Color.parseColor("#1FA2D8") else if (speed < 5f) Ui.GOLD_DARK else Ui.RED
+        c.save()
+        c.rotate(Math.toDegrees(ang.toDouble()).toFloat(), cx, cy)
+        val len = (10f + min(speed, 6f) * 2.2f) * d
+        bigArrow(c, cx, cy, len, 4f * d, col)
+        c.restore()
+        p.color = Ui.NAVY; c.drawCircle(cx, cy, 3 * d, p)
+        text(c, String.format("%.1f m/s", speed), cx, b.t + 79 * d, 15f, Ui.WHITE, Paint.Align.CENTER, maxW = b.w - 10 * d)
         val kind = when {
             speed < 0.6f -> "CALM"
             Math.abs(along) > Math.abs(across) -> if (along > 0) "TAILWIND" else "HEADWIND"
             else -> if (across > 0) "FROM LEFT" else "FROM RIGHT"
         }
-        text(c, kind, cx, cy + 70 * d, 11f, Ui.WHITE, Paint.Align.CENTER, display = false)
+        text(c, kind, cx, b.t + 91 * d, 10f, Ui.GOLD, Paint.Align.CENTER, display = false, maxW = b.w - 10 * d)
     }
-
 
     private val miniPath = Path()
     private val miniRect = RectF()
@@ -344,11 +497,8 @@ class HudView(context: Context, private val ctl: GameController) : View(context)
     /** Top-down map of the hole, turned so the basket is "up" from your lie. */
     private fun drawMinimap(c: Canvas, h: Float) {
         val hole = ctl.hole
-        val w = width.toFloat()
-        val top = 100 * d
-        val bottom = min(top + 190 * d, actionC[1] - actionC[2] - 10 * d)
-        if (bottom - top < 90 * d) return
-        miniRect.set(w - 12 * d - 112 * d, top, w - 12 * d, bottom)
+        val mm = L.minimap ?: return
+        miniRect.set(mm.l, mm.t, mm.r, mm.b)
         panel(c, miniRect, 200)
         val lie = ctl.lie
         val up = (hole.basket - lie).flat().normalized()
@@ -417,24 +567,44 @@ class HudView(context: Context, private val ctl: GameController) : View(context)
         text(c, "CARD", cardBtn.centerX(), cardBtn.centerY() + 6 * d, 15f, Ui.WHITE, Paint.Align.CENTER)
     }
 
+    // (3) disc card: colour swatch, name, four flight-number pills, shape selector
     private fun drawDiscCard(c: Canvas) {
         val disc = ctl.disc
-        panel(c, cardRect)
-        // disc swatch
+        toon(c, cardRect.left, cardRect.top, cardRect.right, cardRect.bottom, 16 * d, Color.parseColor("#3C86E6"), Color.parseColor("#14439A"))
+        val sx = cardRect.left + 62 * d; val sy = cardRect.top + 27 * d; val sr = 18 * d
+        p.style = Paint.Style.FILL; p.color = Color.argb(110, 0, 0, 0)
+        c.drawOval(sx - sr, sy - sr * 0.5f + 5 * d, sx + sr, sy + sr * 0.5f + 5 * d + sr * 0.4f, p)
+        val rgb = 0xFF000000.toInt() or disc.colorRgb
+        p.color = Ui.darken(rgb, 0.55f)
+        c.drawOval(sx - sr, sy - sr * 0.55f + 3 * d, sx + sr, sy + sr * 0.55f + 3 * d, p)
+        p.color = rgb
+        c.drawOval(sx - sr, sy - sr * 0.55f, sx + sr, sy + sr * 0.55f, p)
+        p.color = Color.argb(110, 255, 255, 255)
+        c.drawOval(sx - sr * 0.55f, sy - sr * 0.4f, sx + sr * 0.25f, sy - sr * 0.1f, p)
+        p.style = Paint.Style.STROKE; p.strokeWidth = 2.5f * d; p.color = Color.WHITE
+        c.drawOval(sx - sr, sy - sr * 0.55f, sx + sr, sy + sr * 0.55f, p)
         p.style = Paint.Style.FILL
-        p.color = (0xFF000000.toInt() or disc.colorRgb)
-        c.drawCircle(cardRect.left + 64 * d, cardRect.top + 34 * d, 20 * d, p)
-        p.color = Color.argb(90, 255, 255, 255)
-        c.drawCircle(cardRect.left + 64 * d, cardRect.top + 28 * d, 12 * d, p)
         text(c, "◀", discPrev.centerX(), discPrev.centerY() + 8 * d, 20f, Ui.GOLD, Paint.Align.CENTER)
         text(c, "▶", discNext.centerX(), discNext.centerY() + 8 * d, 20f, Ui.GOLD, Paint.Align.CENTER)
-        text(c, disc.displayName.uppercase(), cardRect.left + 94 * d, cardRect.top + 26 * d, 18f, Ui.WHITE)
-        text(c, if (ctl.isPutt) "PUTT" else disc.kind.uppercase(), cardRect.left + 94 * d, cardRect.top + 41 * d, 12f, Ui.METAL, display = false)
-        val nums = "${disc.speed} | ${disc.glide} | ${disc.turn.toInt()} | ${disc.fade.toInt()}"
-        text(c, nums, cardRect.left + 94 * d, cardRect.top + 57 * d, 14f, Ui.GOLD, Paint.Align.LEFT, display = false)
-        text(c, "◀", shapePrev.left + 20 * d, shapePrev.centerY() + 6 * d, 16f, Ui.GOLD, Paint.Align.CENTER)
-        text(c, "▶", shapeNext.right - 20 * d, shapeNext.centerY() + 6 * d, 16f, Ui.GOLD, Paint.Align.CENTER)
-        text(c, ctl.shape.label.uppercase(), cardRect.centerX(), shapePrev.centerY() + 6 * d, 15f, Ui.CYAN, Paint.Align.CENTER)
+        val nx = cardRect.left + 90 * d
+        val nw = discNext.left - nx - 2 * d
+        text(c, disc.displayName.uppercase(), nx, cardRect.top + 24 * d, 17f, Ui.WHITE, maxW = nw)
+        text(c, if (ctl.isPutt) "PUTT" else disc.kind.uppercase(), nx, cardRect.top + 38 * d, 11f, Color.parseColor("#CFE3FF"), display = false, maxW = nw)
+        // four chunky flight-number pills between the arrows
+        val labels = arrayOf("SPEED", "GLIDE", "TURN", "FADE")
+        val vals = arrayOf("${disc.speed}", "${disc.glide}", "${disc.turn.toInt()}", "${disc.fade.toInt()}")
+        val cols = intArrayOf(Color.parseColor("#F08A2C"), Color.parseColor("#22A8DC"), Color.parseColor("#2FB968"), Color.parseColor("#9A5BE0"))
+        val px0 = cardRect.left + 40 * d; val px1 = cardRect.right - 40 * d
+        val gap = 4 * d
+        val pwid = (px1 - px0 - gap * 3) / 4f
+        val py0 = cardRect.top + 44 * d; val py1 = cardRect.top + 69 * d
+        for (i in 0..3) {
+            val x0 = px0 + i * (pwid + gap)
+            statChip(c, x0, py0, x0 + pwid, py1, cols[i], labels[i], vals[i])
+        }
+        text(c, "◀", shapePrev.left + 20 * d, shapePrev.centerY() + 6 * d + 2 * d, 16f, Ui.GOLD, Paint.Align.CENTER)
+        text(c, "▶", shapeNext.right - 20 * d, shapeNext.centerY() + 6 * d + 2 * d, 16f, Ui.GOLD, Paint.Align.CENTER)
+        text(c, ctl.shape.label.uppercase(), cardRect.centerX(), shapePrev.centerY() + 8 * d, 15f, Ui.CYAN, Paint.Align.CENTER, maxW = cardRect.width() - 150 * d)
     }
 
     private fun drawThrowPanel(c: Canvas) {
@@ -468,74 +638,104 @@ class HudView(context: Context, private val ctl: GameController) : View(context)
     }
 
     private fun drawAimButtons(c: Canvas) {
-        val a = ctl.phase == Phase.AIMING
-        roundButton(c, aimL[0], aimL[1], aimL[2], "◀", touchAim < 0, if (a) Ui.METAL else Ui.METAL_DARK)
-        roundButton(c, aimR[0], aimR[1], aimR[2], "▶", touchAim > 0, if (a) Ui.METAL else Ui.METAL_DARK)
+        stick.draw(c, p, d, ctl.phase == Phase.AIMING)
     }
 
-    private fun drawMeter(c: Canvas, w: Float, h: Float) {
+    // (4) power / accuracy gauge: wide glossy horizontal meter with tick marks and clear sweet-spot markers
+    private fun drawMeter(c: Canvas) {
         val phase = ctl.phase
         val m = ctl.meter
-        val left = 342 * d
-        val right = w - 190 * d
-        val bw = right - left
+        val M = L.meter
         val power = if (m != null && (phase == Phase.CHARGING || phase == Phase.ACCURACY)) m.power else 0f
+        val accPhase = phase == Phase.ACCURACY
+        r.set(M.l, M.t, M.r, M.b)
+        panel(c, r, if (accPhase) 235 else 220, if (accPhase) Ui.ORANGE else Ui.GOLD)
+        val bl = M.l + 14 * d; val br = M.r - 14 * d; val bw = br - bl
 
-        // ---- accuracy bar (stacked above)
-        val ay = h - 112 * d
-        r.set(left, ay, right, ay + 24 * d)
-        panel(c, r, if (phase == Phase.ACCURACY) 230 else 120, if (phase == Phase.ACCURACY) Ui.ORANGE else Ui.METAL_DARK)
-        if (m != null && phase == Phase.ACCURACY) {
+        // ---- accuracy strip
+        val ay = M.t + 21 * d; val ah = 16 * d
+        text(c, "ACCURACY", bl, M.t + 15 * d, 10f, if (accPhase) Ui.ORANGE else Ui.METAL, display = false)
+        trough(c, bl, ay, br, ay + ah)
+        if (m != null) {
             val half = m.sweetHalfWidth * bw
-            r2.set(left + bw / 2f - half, ay + 3 * d, left + bw / 2f + half, ay + 21 * d)
-            p.style = Paint.Style.FILL; p.color = Ui.GOLD
-            c.drawRoundRect(r2, 6 * d, 6 * d, p)
-            val mx = left + clamp(m.marker, 0f, 1f) * bw
-            triangle(c, mx, ay - 5 * d, 7 * d, false, Ui.WHITE)
-            p.color = Ui.WHITE; p.strokeWidth = 3 * d; p.style = Paint.Style.STROKE
-            c.drawLine(mx, ay, mx, ay + 24 * d, p)
+            val a = if (accPhase) 255 else 110
+            r2.set(bl + bw / 2f - half, ay + 2 * d, bl + bw / 2f + half, ay + ah - 2 * d)
             p.style = Paint.Style.FILL
+            p.shader = LinearGradient(0f, r2.top, 0f, r2.bottom, Color.argb(a, 255, 233, 120), Color.argb(a, 214, 150, 0), Shader.TileMode.CLAMP)
+            c.drawRoundRect(r2, 5 * d, 5 * d, p)
+            p.shader = null
+            // sweet-spot brackets
+            p.color = Color.argb(a, 255, 255, 255)
+            c.drawRect(r2.left - 1 * d, ay - 3 * d, r2.left + 1 * d, ay + ah + 3 * d, p)
+            c.drawRect(r2.right - 1 * d, ay - 3 * d, r2.right + 1 * d, ay + ah + 3 * d, p)
+            if (accPhase) {
+                val mx = bl + clamp(m.marker, 0f, 1f) * bw
+                p.style = Paint.Style.STROKE; p.strokeCap = Paint.Cap.ROUND
+                p.strokeWidth = 7 * d; p.color = Color.argb(240, 6, 16, 40)
+                c.drawLine(mx, ay - 3 * d, mx, ay + ah + 3 * d, p)
+                p.strokeWidth = 3.5f * d; p.color = Color.WHITE
+                c.drawLine(mx, ay - 3 * d, mx, ay + ah + 3 * d, p)
+                p.strokeCap = Paint.Cap.BUTT; p.style = Paint.Style.FILL
+            }
         }
-        text(c, "ACCURACY", left + 8 * d, ay - 4 * d, 11f, Ui.METAL, display = false)
+        p.style = Paint.Style.FILL; p.color = Color.argb(70, 255, 255, 255)
+        r2.set(bl + 6 * d, ay + 2 * d, br - 6 * d, ay + ah * 0.45f)
+        c.drawRoundRect(r2, 3 * d, 3 * d, p)
 
         // ---- power bar
-        val py = h - 72 * d
-        r.set(left, py, right, py + 38 * d)
-        panel(c, r, 230)
+        val py = M.t + 62 * d; val ph = 28 * d
+        trough(c, bl, py, br, py + ph)
+        val z1 = bl + bw * 0.60f; val z2 = bl + bw * 0.88f; val z3 = bl + bw * 0.97f
         val fill = bw * power
-        // coloured zones, clipped to the fill
-        c.save()
-        c.clipRect(left, py, left + fill, py + 38 * d)
-        p.style = Paint.Style.FILL
-        val z1 = left + bw * 0.60f; val z2 = left + bw * 0.88f
-        p.color = Color.parseColor("#2FC16A"); c.drawRect(left, py + 3 * d, z1, py + 35 * d, p)
-        p.color = Color.parseColor("#F5C518"); c.drawRect(z1, py + 3 * d, z2, py + 35 * d, p)
-        p.color = Color.parseColor("#E8453C"); c.drawRect(z2, py + 3 * d, right, py + 35 * d, p)
-        p.color = Color.argb(70, 255, 255, 255)
-        c.drawRect(left, py + 3 * d, right, py + 17 * d, p)
-        c.restore()
-        // perfect zone outline
-        p.style = Paint.Style.STROKE; p.strokeWidth = 2 * d; p.color = Color.WHITE
-        c.drawRect(left + bw * 0.97f, py + 3 * d, right, py + 35 * d, p)
-        p.style = Paint.Style.FILL
-        // ticks
-        for (i in 1..9) {
-            val tx = left + bw * i / 10f
-            p.color = Color.argb(90, 255, 255, 255)
-            c.drawRect(tx - 1 * d, py + 28 * d, tx + 1 * d, py + 35 * d, p)
+        // faint zone preview over the whole track, full colour where filled
+        for (pass in 0..1) {
+            c.save()
+            path.reset(); path.addRoundRect(bl + 2 * d, py + 2 * d, br - 2 * d, py + ph - 2 * d, ph / 2f, ph / 2f, Path.Direction.CW)
+            c.clipPath(path)
+            if (pass == 1) c.clipRect(bl, py, bl + fill, py + ph)
+            val al = if (pass == 0) 70 else 255
+            p.style = Paint.Style.FILL
+            p.color = Color.argb(al, 47, 193, 106); c.drawRect(bl, py, z1, py + ph, p)
+            p.color = Color.argb(al, 245, 197, 24); c.drawRect(z1, py, z2, py + ph, p)
+            p.color = Color.argb(al, 232, 69, 60); c.drawRect(z2, py, br, py + ph, p)
+            if (pass == 1) {
+                p.color = Color.argb(80, 255, 255, 255)
+                c.drawRect(bl, py, br, py + ph * 0.45f, p)
+                p.color = Color.argb(60, 0, 0, 0)
+                c.drawRect(bl, py + ph * 0.78f, br, py + ph, p)
+            }
+            c.restore()
         }
-        // pin marker
+        // perfect-power band
+        p.style = Paint.Style.STROKE; p.strokeWidth = 2.5f * d; p.color = Color.WHITE
+        c.drawRect(z3, py + 2 * d, br - 2 * d, py + ph - 2 * d, p)
+        p.style = Paint.Style.FILL
+        text(c, "MAX", (z3 + br) / 2f, py + ph + 13 * d, 8f, Ui.GOLD, Paint.Align.CENTER, display = false)
+        // ticks under the bar: ten steps, taller at 50 %
+        for (i in 0..10) {
+            val tx = bl + bw * i / 10f
+            val tl = if (i % 5 == 0) 7 * d else 4 * d
+            p.color = Color.argb(if (i % 5 == 0) 230 else 150, 255, 255, 255)
+            c.drawRect(tx - 1 * d, py + ph + 1 * d, tx + 1 * d, py + ph + 1 * d + tl, p)
+        }
+        // pin marker: the power to release at
         val pin = ctl.pinPower
-        val pinX = left + min(pin, 1f) * bw
-        triangle(c, pinX, py - 6 * d, 7 * d, false, Ui.GOLD)
-        text(c, if (pin > 1.001f) "PIN OUT OF RANGE" else "PIN", pinX, py - 16 * d, 12f, if (pin > 1.001f) Ui.ORANGE else Ui.GOLD, if (pin > 0.85f) Paint.Align.RIGHT else Paint.Align.CENTER, display = false)
+        val pinX = bl + min(pin, 1f) * bw
+        val out = pin > 1.001f
+        triangle(c, pinX, py - 6 * d, 6 * d, false, Color.argb(255, 6, 16, 40))
+        triangle(c, pinX, py - 6 * d, 4.2f * d, false, if (out) Ui.ORANGE else Ui.GOLD)
+        p.style = Paint.Style.STROKE; p.strokeWidth = 2.5f * d; p.color = if (out) Ui.ORANGE else Ui.GOLD
+        c.drawLine(pinX, py, pinX, py + ph, p)
+        p.style = Paint.Style.FILL
+        text(c, if (out) "PIN OUT OF RANGE" else "PIN", pinX, py - 15 * d, 11f, if (out) Ui.ORANGE else Ui.GOLD,
+            if (pin > 0.85f) Paint.Align.RIGHT else Paint.Align.CENTER, display = false)
 
         val hint = when (phase) {
             Phase.AIMING -> "AIM, THEN PRESS & HOLD — RELEASE TO SET POWER"
             Phase.CHARGING -> if (m != null && m.power >= 1f) "TOO LATE!" else "RELEASE AT THE PIN MARK"
             else -> "TAP TO STOP THE MARKER IN THE GOLD"
         }
-        text(c, hint, (left + right) / 2f, py + 56 * d, 12f, Ui.WHITE, Paint.Align.CENTER, display = false)
+        text(c, hint, (M.l + M.r) / 2f, M.b - 6 * d, 11f, Ui.WHITE, Paint.Align.CENTER, display = false, maxW = bw)
     }
 
     private fun drawIntro(c: Canvas, w: Float, h: Float) {

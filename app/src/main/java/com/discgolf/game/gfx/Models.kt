@@ -204,6 +204,7 @@ uniform float uLean;
 out vec3 vNormal;
 out vec3 vWorld;
 out vec2 vUv;
+out float vH;
 void main() {
     vec4 w = uModel * vec4(aPos, 1.0);
     // Wind: the higher up a vertex is, the further it leans. Phase depends on where the model stands.
@@ -212,6 +213,7 @@ void main() {
     vWorld = w.xyz;
     vNormal = normalize(mat3(uModel) * aNormal);
     vUv = aUv;
+    vH = aPos.y * uSway;
     gl_Position = uMVP * vec4(p, 1.0);
 }
 """
@@ -221,6 +223,7 @@ precision highp float;
 in vec3 vNormal;
 in vec3 vWorld;
 in vec2 vUv;
+in float vH;
 uniform sampler2D uTex;
 uniform vec3 uLightDir;
 uniform vec3 uCamPos;
@@ -238,17 +241,24 @@ void main() {
         float lum = dot(t.rgb, vec3(0.30, 0.59, 0.11));
         float k = clamp(lum * 1.7, 0.0, 1.0);
         t.rgb = mix(uLeafDark, uLeafLight, k * k);
+        // Round, sunlit tops: lighter and warmer toward the crown, deeper and cooler underneath.
+        float top = smoothstep(0.35, 1.0, vH);
+        t.rgb *= mix(vec3(0.74, 0.86, 0.80), vec3(1.14, 1.10, 0.88), top);
+        t.rgb = mix(t.rgb, uLeafLight * 1.15, top * 0.25);
     }
     vec3 n = normalize(vNormal);
     if (!gl_FrontFacing) n = -n;
     vec3 l = normalize(uLightDir);
     // Wrapped light, so leaves facing away from the sun are still bright, as light passes through them.
     float diff = clamp(dot(n, l) * 0.6 + 0.4, 0.0, 1.0);
+    diff = mix(diff, smoothstep(0.25, 0.80, diff), 0.55);      // toon-ish: clumps of light and shade
     vec3 sky = vec3(0.70, 0.80, 0.98);
     vec3 gnd = vec3(0.34, 0.38, 0.26);
     vec3 amb = mix(gnd, sky, n.y * 0.5 + 0.5) * 0.70;
     vec3 base = t.rgb * uTint;
     vec3 lit = base * (amb + vec3(1.0, 0.96, 0.88) * diff * 0.70);
+    float lm = dot(lit, vec3(0.3, 0.59, 0.11));
+    lit = mix(vec3(lm), lit, 1.22);                               // richer colour
     float d = length(vWorld - uCamPos);
     float fogAmt = smoothstep($FOG_START, $FOG_END, d);
     fragColor = vec4(mix(lit, uFogColor, fogAmt), 1.0);

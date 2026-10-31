@@ -187,7 +187,10 @@ float fbm(vec2 p) {
 
 void main() {
     vec3 n = normalize(vNormal);
-    vec2 uv = (vWorld.xz - uSurfRect.xy) * uSurfRect.zw;
+    // Wobble the lookup so the edges of fairway, sand and water are organic curves, not the map's one-metre grid.
+    vec2 wob = vec2(vnoise(vWorld.xz * 0.9), vnoise(vWorld.xz * 0.9 + 31.7)) - 0.5;
+    wob += (vec2(vnoise(vWorld.xz * 3.1), vnoise(vWorld.xz * 3.1 + 9.3)) - 0.5) * 0.45;
+    vec2 uv = (vWorld.xz + wob * 1.3 - uSurfRect.xy) * uSurfRect.zw;
     vec4 map = texture(uSurf, uv);
     float fair = smoothstep(0.35, 0.65, map.r);
     float water = smoothstep(0.30, 0.70, map.g);
@@ -199,7 +202,7 @@ void main() {
     // Fine grain fades with distance so far ground does not shimmer.
     float fine = mix(vnoise(vWorld.xz * 3.5), 0.5, smoothstep(25.0, 90.0, dist));
 
-    vec3 rough = mix(vec3(0.30, 0.52, 0.15), vec3(0.42, 0.64, 0.19), broad);
+    vec3 rough = mix(vec3(0.18, 0.43, 0.12), vec3(0.32, 0.58, 0.16), broad);
     rough = mix(rough, vec3(0.38, 0.40, 0.17), smoothstep(0.58, 0.82, mid) * 0.55);   // dry, yellowed patches
     // Close up: individual blades (stretched noise at two scales) and speckle, fading before they would shimmer.
     float near = 1.0 - smoothstep(6.0, 55.0, dist);
@@ -210,11 +213,13 @@ void main() {
     rough *= 1.0 + detail;
     rough = mix(rough, rough * vec3(1.15, 1.2, 0.7), smoothstep(0.7, 0.95, speck) * near * 0.5);   // pale blade tips
 
-    vec3 fairway = mix(vec3(0.58, 0.82, 0.20), vec3(0.68, 0.88, 0.26), broad);
+    vec3 fairway = mix(vec3(0.46, 0.82, 0.22), vec3(0.58, 0.89, 0.29), broad);
     // Mowing stripes, fading out in the distance where they would alias.
     float stripe = smoothstep(0.35, 0.65, fract(vWorld.z / 9.0));
-    fairway *= 1.0 - 0.13 * stripe * (1.0 - smoothstep(60.0, 160.0, dist));
+    fairway *= 1.0 - 0.20 * stripe * (1.0 - smoothstep(60.0, 160.0, dist));
     fairway *= 0.94 + 0.12 * fine;
+    fairway *= 0.92 + 0.16 * smoothstep(0.30, 0.75, mid);                  // worn and lush patches
+    fairway = mix(fairway, fairway * vec3(0.90, 0.94, 0.82), smoothstep(0.55, 0.9, fbm(vWorld.xz * 0.12 + 5.0)) * 0.6);
     fairway *= 1.0 + detail * 0.8;
 
     // Putting green around the basket: short, bright, mown in rings.
@@ -244,11 +249,11 @@ void main() {
 
     // Light: sun plus sky-and-ground ambient.
     float diff = max(dot(n, normalize(uLightDir)), 0.0);
-    vec3 amb = mix(vec3(0.46, 0.50, 0.34), vec3(0.78, 0.86, 1.0), n.y * 0.5 + 0.5) * 0.70;
+    vec3 amb = mix(vec3(0.46, 0.50, 0.34), vec3(0.80, 0.88, 1.0), n.y * 0.5 + 0.5) * 0.72;
     vec3 lit = col * (amb + vec3(1.0, 0.95, 0.84) * diff * 0.62);
 
     float lum = dot(lit, vec3(0.3, 0.59, 0.11));
-    lit = mix(vec3(lum), lit, 1.08);   // a little extra saturation
+    lit = mix(vec3(lum), lit, 1.22);   // extra saturation
     float fog = smoothstep($FOG_START, $FOG_END, dist);
     fragColor = vec4(mix(lit, vec3($HORIZON_R, $HORIZON_G, $HORIZON_B), fog), 1.0);
 }

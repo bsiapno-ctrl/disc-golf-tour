@@ -134,7 +134,7 @@ class GameActivity : Activity() {
             val aim = (hud.touchAim + keyAim).toFloat() + stickX
             if (aim != 0f) {
                 aimHold += dt
-                val speed = 0.6f + min(aimHold, 1.5f) * 0.5f
+                val speed = if (hud.touchAim != 0f && keyAim == 0 && stickX == 0f) 1.3f else 0.6f + min(aimHold, 1.5f) * 0.5f
                 ctl.aim(aim.coerceIn(-1f, 1f) * speed * dt)
             } else aimHold = 0f
 

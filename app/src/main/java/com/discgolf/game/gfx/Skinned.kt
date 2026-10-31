@@ -148,6 +148,24 @@ object SkinnedLoader {
     private fun map(o: Any?) = o as Map<*, *>
     private fun srgb(c: Float) = c.coerceIn(0f, 1f).pow(1f / 2.2f)
 
+    /** Averages normals of vertices at the same spot (flat-shaded low-poly becomes soft), keeping a little of the original. */
+    private fun smoothNormals(pos: FloatArray, nor: FloatArray): FloatArray {
+        val sum = HashMap<Long, FloatArray>()
+        fun key(i: Int): Long {
+            fun q(v: Float) = (Math.round(v * 400f).toLong() and 0x1FFFFF)
+            return q(pos[i * 3]) or (q(pos[i * 3 + 1]) shl 21) or (q(pos[i * 3 + 2]) shl 42)
+        }
+        val n = pos.size / 3
+        for (i in 0 until n) { val a = sum.getOrPut(key(i)) { FloatArray(3) }; a[0] += nor[i * 3]; a[1] += nor[i * 3 + 1]; a[2] += nor[i * 3 + 2] }
+        val out = FloatArray(nor.size)
+        for (i in 0 until n) {
+            val a = sum[key(i)]!!
+            val l = 1f / sqrt(max(a[0] * a[0] + a[1] * a[1] + a[2] * a[2], 1e-9f))
+            for (k in 0 until 3) out[i * 3 + k] = nor[i * 3 + k] * 0.15f + a[k] * l * 0.85f
+        }
+        return out
+    }
+
     fun load(context: Context, name: String): SkinnedModel? = try { read(context, name) } catch (e: Exception) {
         android.util.Log.w("Skinned", "could not load $name: $e"); null
     }
@@ -210,7 +228,7 @@ object SkinnedLoader {
             meshNodes += ni
             for (prim in list(map(list(json, "meshes")[(mi as Number).toInt()]), "primitives")) {
                 val p = map(prim); val at = map(p["attributes"])
-                val pos = read(num(at, "POSITION").toInt()); val nor = read(num(at, "NORMAL").toInt())
+                val pos = read(num(at, "POSITION").toInt()); val nor = smoothNormals(pos, read(num(at, "NORMAL").toInt()))
                 val jn = read(num(at, "JOINTS_0").toInt()); val wt = read(num(at, "WEIGHTS_0").toInt())
                 val idx = read(num(p, "indices").toInt())
                 val cnt = pos.size / 3
@@ -275,6 +293,7 @@ class SkinShader {
     private val uCam = GLES30.glGetUniformLocation(prog, "uCamPos")
     private val uFog = GLES30.glGetUniformLocation(prog, "uFogColor")
     private val uOutline = GLES30.glGetUniformLocation(prog, "uOutline")
+    private val uKind = GLES30.glGetUniformLocation(prog, "uKind")
     private val rows = FloatArray(MAX_BONES * 12)
 
     fun begin(sun: FloatArray, cx: Float, cy: Float, cz: Float) {
@@ -292,12 +311,22 @@ class SkinShader {
         GLES30.glUniformMatrix4fv(uModel, 1, false, world, 0)
         // Cartoon outline: the model pushed out along its normals, back faces only, in near-black.
         GLES30.glEnable(GLES30.GL_CULL_FACE); GLES30.glCullFace(GLES30.GL_FRONT)
-        GLES30.glUniform1f(uOutline, 0.016f)
+        GLES30.glUniform1f(uOutline, 0.020f)
         for (p in model.parts) { GLES30.glBindVertexArray(p.vao); GLES30.glDrawElements(GLES30.GL_TRIANGLES, p.count, GLES30.GL_UNSIGNED_SHORT, 0) }
         GLES30.glDisable(GLES30.GL_CULL_FACE)
         GLES30.glUniform1f(uOutline, 0f)
         for (p in model.parts) {
-            val c = tint(p.material) ?: p.color
+            val over = tint(p.material)
+            val c = over ?: p.color
+            // What the surface is, so the shader can shade skin, hair, cloth and shoes differently.
+            val kind = when {
+                p.material.startsWith("Skin") -> 2f
+                p.material == "Hair" || p.material == "Eyebrows" -> 3f
+                p.material == "Eye" -> 4f
+                over != null -> 1f
+                else -> 0f
+            }
+            GLES30.glUniform1f(uKind, kind)
             GLES30.glUniform3f(uColor, c[0], c[1], c[2])
             GLES30.glBindVertexArray(p.vao)
             GLES30.glDrawElements(GLES30.GL_TRIANGLES, p.count, GLES30.GL_UNSIGNED_SHORT, 0)
@@ -316,8 +345,10 @@ uniform mat4 uMVP;
 uniform mat4 uModel;
 uniform vec4 uBones[192];
 uniform float uOutline;
+uniform vec3 uCamPos;
 out vec3 vNormal;
 out vec3 vWorld;
+out float vLocalY;
 vec3 skinPos(vec3 p, vec3 n, out vec3 sn) {
     vec4 p4 = vec4(p, 1.0);
     vec3 pos = vec3(0.0); sn = vec3(0.0);
@@ -334,9 +365,11 @@ vec3 skinPos(vec3 p, vec3 n, out vec3 sn) {
 void main() {
     vec3 sn;
     vec3 p = skinPos(aPos, aNormal, sn);
-    p += normalize(sn) * uOutline;
+    float cd = length((uModel * vec4(p, 1.0)).xyz - uCamPos);
+    p += normalize(sn) * uOutline * clamp(0.55 + 0.09 * cd, 0.7, 1.8);
     vec4 w = uModel * vec4(p, 1.0);
     vWorld = w.xyz;
+    vLocalY = w.y - uModel[3].y;            // height above the golfer's feet
     vNormal = normalize(mat3(uModel) * sn);
     gl_Position = uMVP * vec4(p, 1.0);
 }
@@ -345,6 +378,8 @@ void main() {
 precision highp float;
 in vec3 vNormal;
 in vec3 vWorld;
+in float vLocalY;
+uniform float uKind;
 uniform vec3 uColor;
 uniform vec3 uLightDir;
 uniform vec3 uCamPos;
@@ -352,17 +387,45 @@ uniform vec3 uFogColor;
 uniform float uOutline;
 out vec4 fragColor;
 void main() {
-    if (uOutline > 0.0) { fragColor = vec4(0.10, 0.08, 0.10, 1.0); return; }
+    if (uOutline > 0.0) { fragColor = vec4(0.11, 0.06, 0.14, 1.0); return; }
     vec3 n = normalize(vNormal);
     if (!gl_FrontFacing) n = -n;
-    float ndl = dot(n, normalize(uLightDir));
-    float wrap = ndl * 0.5 + 0.5;
-    float toon = smoothstep(0.22, 0.80, wrap);          // soft two-tone terminator
-    vec3 shadowTint = vec3(0.62, 0.66, 0.92);           // cool, saturated shade
-    vec3 amb = mix(vec3(0.46, 0.44, 0.34), vec3(0.78, 0.86, 1.0), n.y * 0.5 + 0.5);
+    // Brighter, more saturated than the model's own colours.
+    float lum0 = dot(uColor, vec3(0.30, 0.59, 0.11));
+    vec3 base = min(mix(vec3(lum0), uColor, 1.40) * 1.14, vec3(1.0));
+    float wrap = dot(n, normalize(uLightDir)) * 0.5 + 0.5;
+    // Toon ramp: deep cool shade, soft mid band, bright lit band.
+    bool skin = uKind > 1.5 && uKind < 2.5;
+    bool hair = uKind > 2.5 && uKind < 3.5;
+    bool cloth = uKind > 0.5 && uKind < 1.5;
+    // Skin shades warm and rosy; everything else shades cool.
+    vec3 c0 = base * (skin ? vec3(0.80, 0.60, 0.64) : vec3(0.62, 0.58, 0.88));
+    vec3 c1 = base * (skin ? vec3(0.94, 0.84, 0.84) : vec3(0.80, 0.80, 0.96));
+    vec3 c2 = base * vec3(1.14, 1.08, 0.96);
+    vec3 lit = mix(c0, c1, smoothstep(0.26, 0.34, wrap));
+    lit = mix(lit, c2, smoothstep(0.58, 0.68, wrap));
+    lit *= mix(vec3(0.86, 0.86, 0.80), vec3(0.98, 1.02, 1.10), n.y * 0.5 + 0.5);   // sky / ground hemisphere
+    // Cloth: fine weave bands, a softly darker hem and underarm, brighter shoulders.
+    if (cloth) {
+        lit *= 1.0 - 0.045 * smoothstep(0.35, 0.65, sin(vLocalY * 120.0) * 0.5 + 0.5);
+        lit *= mix(0.90, 1.06, smoothstep(0.60, 1.50, vLocalY));
+        lit *= 1.0 - 0.10 * (1.0 - smoothstep(0.0, 0.05, abs(vLocalY - 0.78)));     // waistband line
+    }
+    // Hair: a glossy band of light across the crown.
+    if (hair) {
+        vec3 hv = normalize(normalize(uLightDir) + normalize(uCamPos - vWorld));
+        lit += vec3(1.0, 0.95, 0.85) * smoothstep(0.84, 0.90, dot(n, hv)) * 0.30;
+    }
+    // Shoes and feet: darker soles with a pale band above, and a little ground bounce shade on the lower legs.
+    if (!cloth && !hair && !skin) {
+        lit *= mix(0.55, 1.0, smoothstep(0.015, 0.045, vLocalY));
+        lit += vec3(0.10) * (1.0 - smoothstep(0.045, 0.065, abs(vLocalY - 0.055)));
+    }
+    lit *= mix(0.88, 1.0, smoothstep(0.0, 0.45, vLocalY));
     vec3 vdir = normalize(uCamPos - vWorld);
-    float rim = pow(1.0 - max(dot(n, vdir), 0.0), 2.5) * smoothstep(0.2, 0.7, wrap);
-    vec3 lit = uColor * mix(shadowTint * amb * 0.78, vec3(1.08, 1.0, 0.88), toon) + vec3(1.0, 0.92, 0.75) * rim * 0.28;
+    float f = 1.0 - max(dot(n, vdir), 0.0);
+    float rim = smoothstep(0.52, 0.80, f);
+    lit += mix(vec3(0.55, 0.75, 1.0), vec3(1.0, 0.92, 0.70), smoothstep(0.3, 0.7, wrap)) * rim * 0.42;
     float d = length(vWorld - uCamPos);
     fragColor = vec4(mix(lit, uFogColor, smoothstep($FOG_START, $FOG_END, d)), 1.0);
 }

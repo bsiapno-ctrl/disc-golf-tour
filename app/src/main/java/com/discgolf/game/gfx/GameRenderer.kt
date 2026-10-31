@@ -49,6 +49,7 @@ class GameRenderer(private val context: android.content.Context, private val ctl
     private val sun = floatArrayOf(0.45f, 0.80f, 0.40f)
     private lateinit var golfer: GolferModel
     private lateinit var modelShader: ModelShader
+    private lateinit var puffy: PuffyTrees
     private lateinit var skinned: SkinnedGolfer
     private val handDisc = FloatArray(16)
     private val lastHand = FloatArray(3)
@@ -100,6 +101,7 @@ class GameRenderer(private val context: android.content.Context, private val ctl
         meshes = MeshSet()
         golfer = GolferModel(meshes)
         modelShader = ModelShader()
+        puffy = PuffyTrees()
         skinned = SkinnedGolfer(context.applicationContext)
         library = ModelLibrary(context.applicationContext)
         decor.clear()
@@ -281,6 +283,9 @@ class GameRenderer(private val context: android.content.Context, private val ctl
     }
 
 
+    private fun treeScale(t: com.discgolf.game.core.Tree) = t.height * 0.95f
+    private fun treeWiden(t: com.discgolf.game.core.Tree) = (t.canopyR / 2.3f).coerceIn(0.85f, 1.25f)
+
     private val treeModels = arrayOf(
         "MapleTree_1", "MapleTree_2", "MapleTree_3", "MapleTree_4", "MapleTree_5",
         "BirchTree_1", "BirchTree_2", "BirchTree_3", "BirchTree_4", "BirchTree_5")
@@ -301,18 +306,21 @@ class GameRenderer(private val context: android.content.Context, private val ctl
     private fun drawScenery(h: Hole) {
         GLES30.glDisable(GLES30.GL_BLEND)
         modelShader.begin(sun, camPos.x, camPos.y, camPos.z, clock)
-        // Trees: the game rules know each tree's height and spread, so the picture is scaled to match.
+        // Trees: round, puffy cartoon trees sized to each tree's height and spread from the game rules.
+        puffy.begin(sun, camPos.x, camPos.y, camPos.z, clock)
         for ((idx, t) in h.trees.withIndex()) {
             val dx = t.x - camPos.x; val dz = t.z - camPos.z
-            if (dx * dx + dz * dz > 380f * 380f) continue
-            val name = treeModels[(idx * 7 + t.variant * 3) % treeModels.size]
-            val model = library.get(name)
+            val d2 = dx * dx + dz * dz
+            if (d2 > 380f * 380f) continue
+            val shape = (idx * 7 + t.variant * 3) % treeModels.size       // 0-4 broadleaf, 5-9 birch
             val y0 = h.groundAt(t.x, t.z) - 0.1f
-            val tint = 0.88f + ((idx * 37) % 30) / 100f
-            if (model == null) { useMainProgram(); drawProceduralTree(h, idx, t); modelShader.begin(sun, camPos.x, camPos.y, camPos.z, clock); continue }
-            val scale = t.height / model.height * 0.85f
-            drawModel(name, t.x, y0, t.z, scale, (idx * 83 % 360).toFloat(), tint, 0.25f * scale, if (idx % 9 == 4) 2 else if (idx % 5 == 1) 1 else 0)
+            val tint = 0.90f + ((idx * 37) % 30) / 100f
+            val sc = treeScale(t)
+            ms.identity().translate(t.x, y0, t.z).rotate((idx * 83 % 360).toFloat(), 0f, 1f, 0f).scale(sc * treeWiden(t), sc, sc * treeWiden(t))
+            Matrix.multiplyMM(mvp, 0, vp, 0, ms.top, 0)
+            puffy.draw(shape % PuffyTreeGen.SEEDS, puffy.detailFor(sqrt(d2)), mvp, ms.top, tint, 0.03f, if (idx % 9 == 4) 2 else if (idx % 5 == 1) 1 else 0, shape >= 5)
         }
+        modelShader.begin(sun, camPos.x, camPos.y, camPos.z, clock)
         val decorList = decorFor(h)
         for (d in decorList) {
             if (d.model[0] == '@') continue
@@ -577,12 +585,13 @@ class GameRenderer(private val context: android.content.Context, private val ctl
         for (t in h.trees) {
             val dx = t.x - camPos.x; val dz = t.z - camPos.z
             if (dx * dx + dz * dz > 200f * 200f) continue
-            draw(meshes.disc, xfGround(h, t.x + 0.8f, t.z + 0.6f, 0.05f, t.canopyR * 0.95f, t.canopyR * 0.95f), 0f, 0f, 0f, 0.20f)
+            draw(meshes.disc, xfGround(h, t.x + 0.8f, t.z + 0.6f, 0.05f, treeScale(t) * treeWiden(t) * 0.30f, treeScale(t) * treeWiden(t) * 0.30f), 0f, 0f, 0f, 0.20f)
         }
         // Golfer
         val at = if (ctl.phase == Phase.INTRO || ctl.phase == Phase.AIMING || ctl.phase == Phase.CHARGING || ctl.phase == Phase.ACCURACY) ctl.lie else ctl.throwOrigin
-        draw(meshes.disc, xfGround(h, at.x + 0.35f, at.z + 0.25f, 0.05f, 0.62f, 0.62f), 0f, 0f, 0f, 0.30f)
-        draw(meshes.disc, xfGround(h, at.x + 0.9f, at.z + 0.65f, 0.05f, 0.45f, 0.45f), 0f, 0f, 0f, 0.16f)
+        // Soft contact blob under the feet: stacked discs fake a smooth falloff. Then the longer cast shadow.
+        for (i in 0 until 12) { val r = 1.2f - i * 0.065f; draw(meshes.disc, xfGround(h, at.x, at.z, 0.05f + i * 0.002f, r, r), 0f, 0.06f, 0.02f, 0.042f) }
+        draw(meshes.disc, xfGround(h, at.x + 0.9f, at.z + 0.65f, 0.05f, 0.50f, 0.50f), 0f, 0f, 0f, 0.16f)
         if (f != null && ctl.phase != Phase.AIMING && ctl.phase != Phase.CHARGING && ctl.phase != Phase.ACCURACY) {
             val above = max(0f, f.pos.y - h.groundAt(f.pos.x, f.pos.z))
             val s = 0.28f + 0.02f * above
