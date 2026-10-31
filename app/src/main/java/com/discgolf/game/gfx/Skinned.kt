@@ -345,8 +345,8 @@ void main() {
     vec3 n = normalize(vNormal);
     if (!gl_FrontFacing) n = -n;
     float diff = max(dot(n, normalize(uLightDir)), 0.0);
-    vec3 amb = mix(vec3(0.34, 0.38, 0.26), vec3(0.70, 0.80, 0.98), n.y * 0.5 + 0.5) * 0.62;
-    vec3 lit = uColor * (amb + vec3(1.0, 0.96, 0.88) * diff * 0.78);
+    vec3 amb = mix(vec3(0.34, 0.38, 0.26), vec3(0.70, 0.80, 0.98), n.y * 0.5 + 0.5) * 0.80;
+    vec3 lit = uColor * (amb + vec3(1.0, 0.95, 0.85) * diff * 0.60);
     float d = length(vWorld - uCamPos);
     fragColor = vec4(mix(lit, uFogColor, smoothstep($FOG_START, $FOG_END, d)), 1.0);
 }
