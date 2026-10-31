@@ -214,9 +214,9 @@ class GameRenderer(private val context: android.content.Context, private val ctl
             Phase.AIMING, Phase.CHARGING, Phase.ACCURACY -> {
                 val d = headingToDir(ctl.aimHeading)
                 val right = Vec3(d.z, 0f, -d.x)
-                // Over-the-shoulder: the golfer fills roughly 40% of the screen height, the aim line runs off ahead of him.
-                tp = ctl.lie - d * 4.5f + right * 0.9f + up * 1.7f
-                tl = ctl.lie + d * 14f + up * 1.2f
+                // Over-the-shoulder: the golfer fills roughly 40% of the screen height (measured on the emulator: 3.6 m back gave ~29%), the aim line runs off ahead of him.
+                tp = ctl.lie - d * 2.7f + right * 0.75f + up * 1.35f
+                tl = ctl.lie + d * 12f + up * 1.05f
                 // Ease in after a flight or the intro, then hold steady while charging.
                 k = if (ctl.phase == Phase.AIMING) 2.4f + 3.6f * smooth01(ctl.phaseTime / 1.2f) else 6f
             }
