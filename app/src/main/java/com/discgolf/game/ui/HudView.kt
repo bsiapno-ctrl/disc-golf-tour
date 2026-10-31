@@ -740,7 +740,9 @@ class HudView(context: Context, private val ctl: GameController) : View(context)
             Phase.CHARGING -> if (m != null && m.power >= 1f) "TOO LATE!" else "RELEASE AT THE PIN MARK"
             else -> "TAP TO STOP THE MARKER IN THE GOLD"
         }
-        text(c, hint, (M.l + M.r) / 2f, M.b - 6 * d, 11f, Ui.WHITE, Paint.Align.CENTER, display = false, maxW = bw)
+        val H = L.meterHint
+        toon(c, H, 10 * d, Color.parseColor("#1B3E7A"), Color.parseColor("#0A1E44"))
+        text(c, hint, H.centerXf(), H.t + H.h / 2f + 4 * d, 11f, Ui.WHITE, Paint.Align.CENTER, display = false, maxW = H.w - 12 * d)
     }
 
     private fun drawIntro(c: Canvas, w: Float, h: Float) {

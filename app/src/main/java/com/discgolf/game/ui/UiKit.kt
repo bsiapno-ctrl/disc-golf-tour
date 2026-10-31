@@ -127,11 +127,14 @@ class SceneView(ctx: Context) : View(ctx) {
     private fun hill(c: android.graphics.Canvas, w: Float, h: Float, base: Float, amp: Float, freq: Float, phase: Float, color: Int) {
         path.reset(); path.moveTo(0f, h)
         var x = 0f
-        while (x <= w + 12f) {
-            path.lineTo(x, base + amp * kotlin.math.sin(x / w * freq * 6.2832f + phase))
-            x += 12f
+        while (x <= w + 8f) {
+            val a = x / w * 6.2832f
+            // two harmonics give soft, uneven rolling crests
+            val y = base + amp * (kotlin.math.sin(a * freq + phase) * 0.7f + kotlin.math.sin(a * freq * 2.3f + phase * 1.7f) * 0.3f)
+            path.lineTo(x, y)
+            x += 8f
         }
-        path.lineTo(w + 12f, h); path.close()
+        path.lineTo(w + 8f, h); path.close()
         p.color = color; c.drawPath(path, p)
     }
 
@@ -154,9 +157,9 @@ class SceneView(ctx: Context) : View(ctx) {
             val x = ((t * speed + i * span / 4f) % span) - 100f * u
             cloud(c, x, h * (0.12f + 0.11f * ((i * 5) % 4)), (0.8f + 0.15f * (i % 3)) * u)
         }
-        hill(c, w, h, h * 0.58f, 16f * u, 1.3f, 0.5f, Color.parseColor("#8FD9A8"))
-        hill(c, w, h, h * 0.68f, 20f * u, 1.0f, 2.4f, Color.parseColor("#5CC66E"))
-        hill(c, w, h, h * 0.8f, 14f * u, 1.6f, 4.0f, Color.parseColor("#3FB04F"))
+        hill(c, w, h, h * 0.56f, 34f * u, 1.1f, 0.5f, Color.parseColor("#8FD9A8"))
+        hill(c, w, h, h * 0.67f, 30f * u, 0.8f, 2.4f, Color.parseColor("#5CC66E"))
+        hill(c, w, h, h * 0.79f, 22f * u, 1.4f, 4.0f, Color.parseColor("#3FB04F"))
         // mown stripes on the fairway
         val top = h * 0.86f
         p.color = Color.parseColor("#37A346"); c.drawRect(0f, top, w, h, p)

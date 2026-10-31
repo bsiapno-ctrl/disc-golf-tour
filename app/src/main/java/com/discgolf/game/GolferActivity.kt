@@ -185,7 +185,7 @@ class GolferActivity : Activity() {
         }
         col.addView(name, LinearLayout.LayoutParams(-1, dp(32f)).apply { topMargin = dp(6f) })
 
-        val hand = lbl("", 12f, Ui.WHITE).apply { gravity = Gravity.CENTER; setShadowLayer(3f, 0f, 1f, Color.argb(200, 5, 30, 70)) }
+        val hand = lbl("", 11f, Ui.WHITE).apply { gravity = Gravity.CENTER; setSingleLine(true); setShadowLayer(3f, 0f, 1f, Color.argb(200, 5, 30, 70)) }
         refreshers += { hand.text = p.handedness.label.uppercase() }
         val handBtn = gloss("Switch hand", 1, 13f) {
             p.handedness = if (p.handedness == Handedness.RIGHT) Handedness.LEFT else Handedness.RIGHT
@@ -266,11 +266,11 @@ class GolferActivity : Activity() {
 
     private fun statRow(s: Stat, showBlurb: Boolean): View {
         val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-        row.addView(lbl(s.label.uppercase(), 12f, Ui.WHITE, true), LinearLayout.LayoutParams(dp(68f), -2))
+        row.addView(lbl(s.label.uppercase(), 11f, Ui.WHITE, true).apply { setSingleLine(true) }, LinearLayout.LayoutParams(dp(58f), -2))
         val bar = StatBar(this, { p.stat(s) / 99f }, { (p.statXp[s.ordinal] / p.statXpNeeded(p.stat(s))).coerceIn(0f, 1f) }, !creating)
-        row.addView(bar, LinearLayout.LayoutParams(0, dp(18f), 1f).apply { leftMargin = dp(4f); rightMargin = dp(4f) })
+        row.addView(bar, LinearLayout.LayoutParams(0, dp(20f), 1f).apply { leftMargin = dp(2f); rightMargin = dp(2f) })
         val value = lbl("", 16f, Ui.GOLD, true).apply { gravity = Gravity.CENTER }
-        row.addView(value, LinearLayout.LayoutParams(dp(28f), -2))
+        row.addView(value, LinearLayout.LayoutParams(dp(26f), -2))
 
         val minus = gloss("-", 3, 16f) {
             if (creating && p.stats[s.ordinal] > p.archetype.base[s.ordinal]) { p.stats[s.ordinal]--; refresh() }
@@ -280,8 +280,8 @@ class GolferActivity : Activity() {
                 if (pointsLeft() > 0 && p.stats[s.ordinal] < PlayerProfile.CREATE_STAT_CAP) { p.stats[s.ordinal]++; refresh() }
             } else if (p.spendPoint(s)) refresh()
         }
-        if (creating) row.addView(minus, LinearLayout.LayoutParams(dp(30f), dp(24f)).apply { leftMargin = dp(2f) })
-        row.addView(plus, LinearLayout.LayoutParams(dp(30f), dp(24f)).apply { leftMargin = dp(3f) })
+        if (creating) row.addView(minus, LinearLayout.LayoutParams(dp(28f), dp(24f)).apply { leftMargin = dp(1f) })
+        row.addView(plus, LinearLayout.LayoutParams(dp(28f), dp(24f)).apply { leftMargin = dp(2f) })
 
         refreshers += {
             value.text = "${p.stat(s)}"
@@ -322,7 +322,7 @@ class GolferActivity : Activity() {
         }
         picker("Skin", Appearance.SKIN_COUNT, { l.skinTone }, { l.skinTone = it }, { "Tone ${it + 1}" }) { Appearance.SKIN[it] }
         picker("Hair", Appearance.HAIR_STYLES.size, { l.hairStyle }, { l.hairStyle = it }, { Appearance.HAIR_STYLES[it] })
-        picker("Hair colour", Appearance.HAIR_COLOR_COUNT, { l.hairColor }, { l.hairColor = it }, { "Colour ${it + 1}" }) { Appearance.HAIR[it] }
+        picker("Hair col.", Appearance.HAIR_COLOR_COUNT, { l.hairColor }, { l.hairColor = it }, { "Colour ${it + 1}" }) { Appearance.HAIR[it] }
         picker("Headwear", Appearance.HEADWEAR.size, { l.headwear }, { l.headwear = it }, { Appearance.HEADWEAR[it] })
         picker("Shirt", Appearance.SHIRT_COUNT, { l.shirtColor }, { l.shirtColor = it }, { "Style ${it + 1}" }) { Appearance.SHIRT[it] }
         picker("Shorts", Appearance.SHORTS_COUNT, { l.shortsColor }, { l.shortsColor = it }, { "Style ${it + 1}" }) { Appearance.SHORTS[it] }

@@ -106,6 +106,7 @@ class PortraitView(context: Context) : View(context) {
         val breathe = sin(t * 2.4f + 0.6f) * 0.5f * u
         val blink = (t % 3.4f) > 3.25f
         canvas.save()
+        canvas.scale(0.85f, 0.85f, cx, h * 0.12f)   // shrink golfer so the torso sits inside the card with margin
         canvas.translate(0f, bob)
 
         val headCy = h * 0.40f
@@ -114,7 +115,7 @@ class PortraitView(context: Context) : View(context) {
 
         // shoulders / shirt
         p.color = c(shirt)
-        rect.set(cx - 34f * u * build, h * 0.66f + breathe, cx + 34f * u * build, h + 14f * u)
+        rect.set(cx - 34f * u * build, h * 0.66f + breathe, cx + 34f * u * build, h * 0.93f)
         canvas.drawRoundRect(rect, 18f * u, 18f * u, p)
         outline(canvas, u, c(shirt, 0.55f)) { canvas.drawRoundRect(rect, 18f * u, 18f * u, p) }
         p.color = Color.argb(60, 255, 255, 255)
