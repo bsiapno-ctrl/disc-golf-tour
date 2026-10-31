@@ -64,15 +64,14 @@ class GameActivity : Activity() {
         val saved = SaveStore.load(this)
         if (saved == null) { finish(); return }
         profile = saved
-        ctl = GameController(profile)
+        ctl = GameController(profile, CourseLibrary.selected(this).second.holes)
 
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        goImmersive()
 
         glView = GLSurfaceView(this).apply {
             setEGLContextClientVersion(3)
             setEGLConfigChooser(8, 8, 8, 8, 24, 0)
-            setRenderer(GameRenderer(ctl))
+            setRenderer(GameRenderer(this@GameActivity, ctl))
             renderMode = GLSurfaceView.RENDERMODE_WHEN_DIRTY
         }
         hud = HudView(this, ctl).apply {
