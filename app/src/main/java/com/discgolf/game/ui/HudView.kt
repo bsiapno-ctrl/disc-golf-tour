@@ -428,10 +428,10 @@ class HudView(context: Context, private val ctl: GameController) : View(context)
         c.drawCircle(cardRect.left + 64 * d, cardRect.top + 28 * d, 12 * d, p)
         text(c, "◀", discPrev.centerX(), discPrev.centerY() + 8 * d, 20f, Ui.GOLD, Paint.Align.CENTER)
         text(c, "▶", discNext.centerX(), discNext.centerY() + 8 * d, 20f, Ui.GOLD, Paint.Align.CENTER)
-        text(c, disc.displayName.uppercase(), cardRect.left + 94 * d, cardRect.top + 30 * d, 18f, Ui.WHITE)
-        text(c, if (ctl.isPutt) "PUTT" else disc.kind.uppercase(), cardRect.left + 94 * d, cardRect.top + 48 * d, 12f, Ui.METAL, display = false)
+        text(c, disc.displayName.uppercase(), cardRect.left + 94 * d, cardRect.top + 26 * d, 18f, Ui.WHITE)
+        text(c, if (ctl.isPutt) "PUTT" else disc.kind.uppercase(), cardRect.left + 94 * d, cardRect.top + 41 * d, 12f, Ui.METAL, display = false)
         val nums = "${disc.speed} | ${disc.glide} | ${disc.turn.toInt()} | ${disc.fade.toInt()}"
-        text(c, nums, cardRect.centerX(), cardRect.top + 68 * d, 15f, Ui.GOLD, Paint.Align.CENTER, display = false)
+        text(c, nums, cardRect.left + 94 * d, cardRect.top + 57 * d, 14f, Ui.GOLD, Paint.Align.LEFT, display = false)
         text(c, "◀", shapePrev.left + 20 * d, shapePrev.centerY() + 6 * d, 16f, Ui.GOLD, Paint.Align.CENTER)
         text(c, "▶", shapeNext.right - 20 * d, shapeNext.centerY() + 6 * d, 16f, Ui.GOLD, Paint.Align.CENTER)
         text(c, ctl.shape.label.uppercase(), cardRect.centerX(), shapePrev.centerY() + 6 * d, 15f, Ui.CYAN, Paint.Align.CENTER)
@@ -529,7 +529,6 @@ class HudView(context: Context, private val ctl: GameController) : View(context)
         val pinX = left + min(pin, 1f) * bw
         triangle(c, pinX, py - 6 * d, 7 * d, false, Ui.GOLD)
         text(c, if (pin > 1.001f) "PIN OUT OF RANGE" else "PIN", pinX, py - 16 * d, 12f, if (pin > 1.001f) Ui.ORANGE else Ui.GOLD, if (pin > 0.85f) Paint.Align.RIGHT else Paint.Align.CENTER, display = false)
-        text(c, "POWER ${(power * 100).toInt()}%", left + 8 * d, py + 56 * d, 11f, Ui.METAL, display = false)
 
         val hint = when (phase) {
             Phase.AIMING -> "AIM, THEN PRESS & HOLD — RELEASE TO SET POWER"
