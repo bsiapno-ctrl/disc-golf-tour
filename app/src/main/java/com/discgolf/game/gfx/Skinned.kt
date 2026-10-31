@@ -416,6 +416,13 @@ void main() {
         vec3 hv = normalize(normalize(uLightDir) + normalize(uCamPos - vWorld));
         lit += vec3(1.0, 0.95, 0.85) * smoothstep(0.84, 0.90, dot(n, hv)) * 0.30;
     }
+    // Hair settles darker toward the nape so the cap of hair reads against the neck; headwear keeps its colour.
+    if (hair) lit *= mix(0.74, 1.0, smoothstep(1.50, 1.70, vLocalY));
+    // Skin: a soft shadow under the chin and hairline, and warmer, rosier hands and forearms than the face.
+    if (skin) {
+        lit *= 1.0 - 0.16 * smoothstep(1.36, 1.44, vLocalY) * (1.0 - smoothstep(1.50, 1.58, vLocalY));
+        lit *= mix(vec3(1.05, 0.95, 0.93), vec3(1.0), smoothstep(0.80, 1.05, vLocalY));
+    }
     // Shoes and feet: darker soles with a pale band above, and a little ground bounce shade on the lower legs.
     if (!cloth && !hair && !skin) {
         lit *= mix(0.55, 1.0, smoothstep(0.015, 0.045, vLocalY));
@@ -425,7 +432,7 @@ void main() {
     vec3 vdir = normalize(uCamPos - vWorld);
     float f = 1.0 - max(dot(n, vdir), 0.0);
     float rim = smoothstep(0.52, 0.80, f);
-    lit += mix(vec3(0.55, 0.75, 1.0), vec3(1.0, 0.92, 0.70), smoothstep(0.3, 0.7, wrap)) * rim * 0.42;
+    lit += mix(vec3(0.55, 0.75, 1.0), vec3(1.0, 0.92, 0.70), smoothstep(0.3, 0.7, wrap)) * rim * (hair ? 0.18 : 0.42);
     float d = length(vWorld - uCamPos);
     fragColor = vec4(mix(lit, uFogColor, smoothstep($FOG_START, $FOG_END, d)), 1.0);
 }
