@@ -22,7 +22,8 @@ class TreeMeshData(val vertices: FloatArray, val indices: ShortArray)
  * The tree is 1 unit tall, standing at the origin; the caller scales it by the tree's height.
  */
 object PuffyTreeGen {
-    const val SEEDS = 6
+    /** Species: 0-3 round oaks, 4 tall oval (birch), 5 pine, 6 palm. */
+    const val SEEDS = 7
 
     private class Rng(var s: Int) {
         fun next(): Float { s = s * 1664525 + 1013904223; return ((s ushr 8) and 0xFFFFFF) / 16777216f }
@@ -106,79 +107,166 @@ object PuffyTreeGen {
     }
 
     /**
-     * One lumpy sphere. [detail] 2 = mid/large puffs get 320 triangles, 1 = everything 80, 0 = everything 20 (far away).
-     * Normals are blended toward the direction away from the canopy centre.
+     * One lumpy ellipsoid [rx] x [ry] x [rz], pitched about z then yawed about y. [sub] picks the icosphere detail
+     * (0 = 20 triangles, 1 = 80, 2 = 320). [own] is how much of the blob's own normal is kept (the rest leans away from
+     * the crown centre), so a low value shades the crown as one ball and a high one shows every leaf cluster.
      */
-    private fun blob(b: Builder, cx: Float, cy: Float, cz: Float, rad: Float, squash: Float, canopy: FloatArray, detail: Int, rnd: Rng, shadeBias: Float) {
-        val sub = when (detail) { 2 -> if (rad > 0.15f) 2 else 1; 1 -> 1; else -> 0 }
+    private fun blob(b: Builder, cx: Float, cy: Float, cz: Float, rx: Float, ry: Float, rz: Float, yaw: Float, pitch: Float,
+                     canopy: FloatArray, sub: Int, rnd: Rng, shadeBias: Float, own: Float, lumps: Float) {
         val m = ico(sub)
         val p1 = rnd.range(0f, 6.28f); val p2 = rnd.range(0f, 6.28f); val p3 = rnd.range(0f, 6.28f)
         val id = rnd.next()
+        val cp = cos(pitch); val sp = sin(pitch); val cw = cos(yaw); val sw = sin(yaw)
         var ox = cx - canopy[0]; var oy = cy - canopy[1]; var oz = cz - canopy[2]
         val ol = max(sqrt(ox * ox + oy * oy + oz * oz), 1e-4f); ox /= ol; oy /= ol; oz /= ol
         val base = b.v.size / 9
         val n = m.pos.size / 3
         for (k in 0 until n) {
             val dx = m.pos[k * 3]; val dy = m.pos[k * 3 + 1]; val dz = m.pos[k * 3 + 2]
-            // Lumpy surface: a couple of low-frequency waves push the radius in and out by about 10 percent.
-            val bump = 0.5f * sin(dx * 3.3f + p1) * sin(dy * 2.9f + p2) + 0.5f * sin(dz * 3.7f + p3) * sin(dx * 2.3f - p1)
-            val r = rad * (1f + 0.11f * bump)
-            val x = cx + dx * r; val y = cy + dy * r * squash; val z = cz + dz * r
-            // Canopy-shaped normals: mostly the blob's own, leaning to the crown's global bulge.
-            val nx = dx * 0.62f + (x - canopy[0]) * 0.9f; val ny = dy * 0.62f + (y - canopy[1]) * 1.2f; val nz = dz * 0.62f + (z - canopy[2]) * 0.9f
-            val nl = sqrt(nx * nx + ny * ny + nz * nz)
-            // Light amount: up-facing and high-up is bright; the belly and the inside faces are dark.
-            val up = dy
-            val inward = -(dx * ox + dy * oy + dz * oz)         // 1 when facing the crown centre (hidden)
-            var g = 0.66f + 0.46f * up + 0.55f * (cy - canopy[1]) - 0.30f * max(inward, 0f) + shadeBias + (id - 0.5f) * 0.10f
+            val bump = 0.5f * sin(dx * 5.1f + p1) * sin(dy * 4.7f + p2) + 0.5f * sin(dz * 5.9f + p3) * sin(dx * 3.9f - p1)
+            val r = 1f + lumps * bump
+            var lx = dx * rx * r; var ly = dy * ry * r; var lz = dz * rz * r
+            var tx = lx * cp - ly * sp; var ty = lx * sp + ly * cp
+            val x = cx + tx * cw + lz * sw; val y = cy + ty; val z = cz - tx * sw + lz * cw
+            // Ellipsoid normal, rotated the same way.
+            lx = dx / rx; ly = dy / ry; lz = dz / rz
+            tx = lx * cp - ly * sp; ty = lx * sp + ly * cp
+            var ax = tx * cw + lz * sw; var ay = ty; var az = -tx * sw + lz * cw
+            val al = max(sqrt(ax * ax + ay * ay + az * az), 1e-5f); ax /= al; ay /= al; az /= al
+            var bx = x - canopy[0]; var by = y - canopy[1]; var bz = z - canopy[2]
+            val bl = max(sqrt(bx * bx + by * by + bz * bz), 1e-5f); bx /= bl; by /= bl; bz /= bl
+            val nx = ax * own + bx * (1f - own); val ny = ay * own + by * (1f - own); val nz = az * own + bz * (1f - own)
+            val inward = -(ax * ox + ay * oy + az * oz)
+            var g = 0.60f + 0.40f * ay + 0.55f * (y - canopy[1]) - 0.30f * max(inward, 0f) + shadeBias + (id - 0.5f) * 0.12f
             g = g.coerceIn(0f, 1f)
-            b.vertex(x, y, z, nx / nl, ny / nl, nz / nl, g, 0f, id)
+            b.vertex(x, y, z, nx, ny, nz, g, 0f, id)
         }
         var i = 0
         while (i < m.idx.size) { b.tri(base + m.idx[i], base + m.idx[i + 1], base + m.idx[i + 2]); i += 3 }
     }
 
+    /** Small leaf-cluster blobs scattered over an ellipsoidal crown, so its outline and shading are layered, not smooth. */
+    private fun clusters(b: Builder, cc: FloatArray, rx: Float, ry: Float, count: Int, r0: Float, r1: Float, sub: Int, rnd: Rng, minY: Float) {
+        for (k in 0 until count) {
+            val a = rnd.range(0f, 6.283f)
+            val e = rnd.range(minY, 1f)                       // height on the unit sphere, -1..1
+            val rr = sqrt(max(1f - e * e, 0f))
+            val x = cc[0] + cos(a) * rr * rx * 0.97f; val y = cc[1] + e * ry * 0.97f; val z = cc[2] + sin(a) * rr * rx * 0.97f
+            val r = rnd.range(r0, r1)
+            blob(b, x, y, z, r, r * 0.85f, r, 0f, 0f, cc, sub, rnd, if (e > 0.3f) 0.04f else -0.04f, 0.78f, 0.14f)
+        }
+    }
+
+    private fun trunk(b: Builder, lean: Float, top: Float, r0: Float, sides: Int) {
+        tube(b, 0f, -0.02f, 0f, lean * 0.4f, 0.10f, 0f, r0, r0 * 0.72f, sides, 0.10f, 0.30f, 0.1f)
+        tube(b, lean * 0.4f, 0.10f, 0f, lean, top * 0.62f, lean * 0.5f, r0 * 0.72f, r0 * 0.50f, sides, 0.30f, 0.55f, 0.2f)
+        tube(b, lean, top * 0.62f, lean * 0.5f, lean, top, lean * 0.5f, r0 * 0.50f, r0 * 0.36f, sides, 0.55f, 0.65f, 0.3f)
+    }
+
     fun build(seed: Int, detail: Int): TreeMeshData {
         val rnd = Rng(seed * 7919 + 17)
         val b = Builder()
-        val cc = floatArrayOf(0f, 0.66f, 0f)                          // crown centre
-        val lean = rnd.range(-0.03f, 0.03f)
-
-        // Blob layout first so limbs can reach for them.
-        class Blob(val x: Float, val y: Float, val z: Float, val r: Float, val sq: Float, val bias: Float)
-        val blobs = ArrayList<Blob>()
-        val widen = rnd.range(0.92f, 1.14f)
-        blobs += Blob(lean, 0.69f, lean * 0.5f, rnd.range(0.255f, 0.29f), 0.86f, 0.02f)        // big top-centre puff
-        val ring = 5 + (seed % 2)
-        val a0 = rnd.range(0f, 6.28f)
-        for (k in 0 until ring) {
-            val a = a0 + k * 2f * PI.toFloat() / ring + rnd.range(-0.25f, 0.25f)
-            val d = rnd.range(0.19f, 0.25f) * widen
-            blobs += Blob(cos(a) * d, rnd.range(0.57f, 0.66f), sin(a) * d, rnd.range(0.17f, 0.215f), 0.84f, -0.02f)
-        }
-        for (k in 0 until 3) {
-            val a = a0 + 0.9f + k * 2.1f + rnd.range(-0.3f, 0.3f)
-            val d = rnd.range(0.22f, 0.30f) * widen
-            blobs += Blob(cos(a) * d, rnd.range(0.47f, 0.53f), sin(a) * d, rnd.range(0.12f, 0.16f), 0.8f, -0.10f)   // low skirt
-        }
-        for (k in 0 until 2) {
-            val a = a0 + k * 3.4f + 1.3f
-            val d = rnd.range(0.05f, 0.13f)
-            blobs += Blob(cos(a) * d, rnd.range(0.83f, 0.88f), sin(a) * d, rnd.range(0.12f, 0.16f), 0.86f, 0.10f)   // top tufts
-        }
-
-        // Trunk: thick, flared at the foot, tapering into the crown; and limbs toward the bigger puffs.
         val sides = if (detail >= 2) 10 else if (detail == 1) 7 else 5
-        tube(b, 0f, -0.02f, 0f, lean * 0.4f, 0.10f, 0f, 0.056f, 0.040f, sides, 0.10f, 0.30f, 0.1f)
-        tube(b, lean * 0.4f, 0.10f, 0f, lean, 0.42f, lean * 0.5f, 0.040f, 0.028f, sides, 0.30f, 0.55f, 0.2f)
-        tube(b, lean, 0.42f, lean * 0.5f, lean, 0.66f, lean * 0.5f, 0.028f, 0.020f, sides, 0.55f, 0.65f, 0.3f)
-        if (detail >= 1) {
-            for (k in 1..min(3, blobs.size - 1)) {
-                val bl = blobs[k * 2 % blobs.size]
-                tube(b, lean, 0.40f + 0.04f * k, lean * 0.5f, bl.x * 0.75f, bl.y - 0.02f, bl.z * 0.75f, 0.020f, 0.012f, 6, 0.45f, 0.65f, 0.4f)
+        val bigSub = when (detail) { 2 -> 2; 1 -> 1; else -> 0 }
+        val smallSub = if (detail >= 1) 1 else 0
+        val lean = rnd.range(-0.03f, 0.03f)
+        when (seed) {
+            5 -> pine(b, rnd, detail, sides)
+            6 -> palm(b, rnd, detail, sides)
+            4 -> {
+                val cc = floatArrayOf(lean, 0.66f, lean * 0.5f)
+                trunk(b, lean, 0.62f, 0.040f, sides)
+                if (detail >= 1) for (k in 0 until 3) {
+                    val a = k * 2.1f + rnd.range(0f, 1f)
+                    tube(b, lean, 0.40f + 0.06f * k, lean * 0.5f, lean + cos(a) * 0.10f, 0.56f + 0.1f * k, lean * 0.5f + sin(a) * 0.10f, 0.014f, 0.008f, 6, 0.45f, 0.65f, 0.4f)
+                }
+                // Tall oval crown: three stacked rings of lumps and a cap.
+                for (layer in 0 until 3) {
+                    val y = 0.50f + layer * 0.17f
+                    val rad = if (layer == 1) 0.20f else 0.16f
+                    val ring = 4
+                    val a0 = rnd.range(0f, 6.28f)
+                    for (k in 0 until ring) {
+                        val a = a0 + k * 6.283f / ring + layer * 0.7f
+                        val d = rnd.range(0.10f, 0.15f) * (if (layer == 1) 1.15f else 0.9f)
+                        blob(b, lean + cos(a) * d, y + rnd.range(-0.02f, 0.03f), lean * 0.5f + sin(a) * d, rad, rad * 0.9f, rad, 0f, 0f, cc, bigSub, rnd, -0.03f + layer * 0.05f, 0.70f, 0.10f)
+                    }
+                }
+                blob(b, lean, 0.93f, lean * 0.5f, 0.15f, 0.15f, 0.15f, 0f, 0f, cc, bigSub, rnd, 0.10f, 0.70f, 0.10f)
+                if (detail >= 1) clusters(b, cc, 0.27f, 0.42f, if (detail >= 2) 22 else 12, 0.055f, 0.09f, smallSub, rnd, -0.3f)
+            }
+            else -> {
+                val cc = floatArrayOf(lean, 0.66f, lean * 0.5f)
+                val widen = rnd.range(0.92f, 1.14f) + (seed % 2) * 0.04f
+                trunk(b, lean, 0.66f, 0.056f, sides)
+                if (detail >= 1) for (k in 0 until 4) {
+                    val a = k * 1.6f + rnd.range(0f, 0.8f)
+                    val d = 0.20f * widen
+                    tube(b, lean, 0.38f + 0.045f * k, lean * 0.5f, lean + cos(a) * d, 0.55f + 0.03f * k, lean * 0.5f + sin(a) * d, 0.020f, 0.010f, 6, 0.45f, 0.65f, 0.4f)
+                }
+                // Main puffs (bigger lumps, a lower skirt, top tufts), then a layer of small leaf clusters over them.
+                blob(b, lean, 0.70f, lean * 0.5f, rnd.range(0.23f, 0.26f), 0.22f, rnd.range(0.23f, 0.26f), 0f, 0f, cc, bigSub, rnd, 0.02f, 0.62f, 0.08f)
+                val ring = 5 + (seed % 2)
+                val a0 = rnd.range(0f, 6.28f)
+                for (k in 0 until ring) {
+                    val a = a0 + k * 2f * PI.toFloat() / ring + rnd.range(-0.25f, 0.25f)
+                    val d = rnd.range(0.19f, 0.25f) * widen; val r = rnd.range(0.15f, 0.19f)
+                    blob(b, cos(a) * d, rnd.range(0.57f, 0.66f), sin(a) * d, r, r * 0.84f, r, 0f, 0f, cc, bigSub, rnd, -0.02f, 0.62f, 0.08f)
+                }
+                for (k in 0 until 3) {
+                    val a = a0 + 0.9f + k * 2.1f + rnd.range(-0.3f, 0.3f)
+                    val d = rnd.range(0.22f, 0.30f) * widen; val r = rnd.range(0.11f, 0.14f)
+                    blob(b, cos(a) * d, rnd.range(0.47f, 0.53f), sin(a) * d, r, r * 0.8f, r, 0f, 0f, cc, bigSub, rnd, -0.10f, 0.62f, 0.08f)
+                }
+                if (detail >= 1) clusters(b, cc, 0.31f * widen, 0.28f, if (detail >= 2) 30 else 14, 0.06f, 0.10f, smallSub, rnd, -0.35f)
             }
         }
-        for (bl in blobs) blob(b, bl.x, bl.y, bl.z, bl.r, bl.sq, cc, detail, rnd, bl.bias)
         return b.build()
+    }
+
+    /** Conifer: a tapering trunk and stacked tiers of drooping, flattened needle-clumps. */
+    private fun pine(b: Builder, rnd: Rng, detail: Int, sides: Int) {
+        val cc = floatArrayOf(0f, 0.55f, 0f)
+        tube(b, 0f, -0.02f, 0f, 0f, 0.30f, 0f, 0.045f, 0.030f, sides, 0.10f, 0.30f, 0.1f)
+        tube(b, 0f, 0.30f, 0f, 0f, 0.92f, 0f, 0.030f, 0.008f, sides, 0.30f, 0.60f, 0.2f)
+        val sub = if (detail >= 1) 1 else 0
+        val tiers = if (detail >= 2) 8 else 6
+        for (t in 0 until tiers) {
+            val f = t.toFloat() / (tiers - 1)
+            val y = 0.17f + 0.70f * f
+            val reach = 0.30f * (1f - 0.80f * f) + 0.04f
+            val n = if (f < 0.4f) 7 else if (f < 0.75f) 5 else 4
+            val a0 = rnd.range(0f, 6.28f)
+            for (k in 0 until n) {
+                val a = a0 + k * 6.283f / n + t * 0.55f
+                val len = reach * rnd.range(0.55f, 0.65f)
+                val bx = cos(a) * len; val bz = sin(a) * len
+                blob(b, bx, y + rnd.range(-0.01f, 0.015f) - 0.02f * (1f - f), bz, len * 1.02f, 0.055f + 0.02f * (1f - f), 0.075f + 0.04f * (1f - f), -a, -0.30f, cc, sub, rnd, -0.04f + 0.10f * f, 0.85f, 0.12f)
+            }
+            blob(b, 0f, y + 0.02f, 0f, reach * 0.42f, 0.06f, reach * 0.42f, 0f, 0f, cc, sub, rnd, 0.02f + 0.10f * f, 0.8f, 0.10f)
+        }
+        blob(b, 0f, 0.97f, 0f, 0.035f, 0.075f, 0.035f, 0f, 0f, cc, sub, rnd, 0.15f, 0.9f, 0.05f)
+    }
+
+    /** Palm: a curved, ringed trunk topped by a rosette of long drooping fronds. */
+    private fun palm(b: Builder, rnd: Rng, detail: Int, sides: Int) {
+        val cc = floatArrayOf(0.14f, 0.80f, 0f)
+        val bend = 0.14f
+        var px = 0f; var py = -0.02f
+        for (k in 1..5) {
+            val f = k / 5f
+            val x = bend * f * f; val y = 0.80f * f
+            tube(b, px, py, 0f, x, y, 0f, 0.040f - 0.014f * (k - 1) / 5f, 0.040f - 0.014f * k / 5f, sides, 0.15f + 0.10f * (k - 1), 0.25f + 0.10f * k, 0.15f + 0.1f * (k % 2))
+            px = x; py = y
+        }
+        val fronds = if (detail >= 2) 10 else 7
+        val sub = if (detail >= 1) 1 else 0
+        for (k in 0 until fronds) {
+            val a = k * 6.283f / fronds + rnd.range(-0.2f, 0.2f)
+            val len = rnd.range(0.26f, 0.32f)
+            val droop = rnd.range(-0.55f, -0.15f)
+            blob(b, cc[0] + cos(a) * len * 0.85f, cc[1] + 0.02f + droop * len * 0.4f, sin(a) * len * 0.85f, len, 0.014f, 0.065f, -a, droop, cc, sub, rnd, 0.06f, 0.95f, 0.10f)
+        }
+        blob(b, cc[0], cc[1], 0f, 0.05f, 0.04f, 0.05f, 0f, 0f, cc, 1, rnd, 0.0f, 0.9f, 0.05f)
     }
 }

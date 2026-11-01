@@ -27,9 +27,11 @@ class PuffyTrees {
     private val uBarkLight = GLES30.glGetUniformLocation(prog, "uBarkLight")
     private val meshes = arrayOfNulls<TreeMesh>(PuffyTreeGen.SEEDS * 3)
 
-    /** Foliage families: 0 fresh green, 1 yellow-green, 2 pink blossom. */
-    private val leafDark = arrayOf(floatArrayOf(0.12f, 0.44f, 0.15f), floatArrayOf(0.18f, 0.40f, 0.10f), floatArrayOf(0.62f, 0.30f, 0.44f))
-    private val leafLight = arrayOf(floatArrayOf(0.66f, 0.93f, 0.28f), floatArrayOf(0.76f, 0.90f, 0.30f), floatArrayOf(1.00f, 0.80f, 0.88f))
+    /** Foliage families: 0 fresh green, 1 yellow-green, 2 pink blossom, 3 orange blossom, 4 pine, 5 palm. */
+    private val leafDark = arrayOf(floatArrayOf(0.08f, 0.38f, 0.16f), floatArrayOf(0.16f, 0.38f, 0.10f), floatArrayOf(0.88f, 0.50f, 0.66f),
+        floatArrayOf(0.84f, 0.38f, 0.14f), floatArrayOf(0.06f, 0.30f, 0.17f), floatArrayOf(0.10f, 0.46f, 0.16f))
+    private val leafLight = arrayOf(floatArrayOf(0.62f, 0.95f, 0.26f), floatArrayOf(0.80f, 0.94f, 0.28f), floatArrayOf(1.00f, 0.78f, 0.88f),
+        floatArrayOf(1.00f, 0.80f, 0.34f), floatArrayOf(0.42f, 0.78f, 0.34f), floatArrayOf(0.70f, 0.96f, 0.30f))
     private val barkDark = arrayOf(floatArrayOf(0.30f, 0.20f, 0.13f), floatArrayOf(0.52f, 0.52f, 0.50f))
     private val barkLight = arrayOf(floatArrayOf(0.70f, 0.52f, 0.34f), floatArrayOf(0.97f, 0.96f, 0.92f))
 
@@ -84,6 +86,18 @@ class PuffyTrees {
     }
 
     companion object {
+        /** Picks a species for tree [idx]: packed as seed | kind shl 4 | (1 if birch bark) shl 8. Mirrored in tools/preview/pv.js. */
+        fun species(idx: Int, variant: Int, nearWater: Boolean): Int {
+            if (nearWater && idx % 2 == 0) return 6 or (5 shl 4)
+            val oak = idx % 4
+            return when {
+                variant == 2 -> oak or ((if (idx % 2 == 0) 2 else 3) shl 4)
+                variant == 0 -> if (idx % 3 == 0) 5 or (4 shl 4) else oak or ((if (idx % 5 == 1) 1 else 0) shl 4)
+                idx % 2 == 0 -> 4 or ((if (idx % 3 == 0) 1 else 0) shl 4) or (1 shl 8)
+                else -> (idx / 2) % 4 or ((if (idx % 7 == 1) 1 else 0) shl 4)
+            }
+        }
+
         private const val VERT = """#version 300 es
 layout(location = 0) in vec3 aPos;
 layout(location = 1) in vec3 aNormal;
@@ -122,37 +136,61 @@ uniform vec3 uBarkDark;
 uniform vec3 uBarkLight;
 out vec4 fragColor;
 float hash(vec3 p) { p = fract(p * 0.3183099 + 0.1); p *= 17.0; return fract(p.x * p.y * p.z * (p.x + p.y + p.z)); }
+// Leaf flecks: a grid of soft round dots in world space (three octaves of size). Returns x = fleck coverage, y = height inside the fleck (for a lit top edge).
+vec2 flecks(vec3 p, float seed) {
+    vec3 c = floor(p), f = fract(p) - 0.5;
+    float h = hash(c + seed);
+    vec3 j = vec3(hash(c + 3.1 + seed), hash(c + 7.7 + seed), hash(c + 1.3 + seed)) - 0.5;
+    vec3 d = f - j * 0.45;
+    float r = length(d * vec3(1.0, 1.6, 1.0));
+    float on = step(0.20, h) * (1.0 - smoothstep(0.30, 0.46, r));
+    return vec2(on, clamp(-d.y * 2.2 + 0.5, 0.0, 1.0));
+}
 void main() {
     vec3 n = normalize(vNormal);
     vec3 l = normalize(uLightDir);
+    vec3 v = normalize(uCamPos - vWorld);
     float g = vCol.x;
     float isBark = vCol.y;
-    // Leaf-clump mottling: soft patches of light and shade so the crown reads as foliage and not plastic.
-    vec3 q = vWorld * 1.7;
-    float sp = (sin(q.x * 2.3 + sin(q.z * 1.7)) * sin(q.y * 2.9 + sin(q.x * 1.3)) * sin(q.z * 2.1 + q.y * 0.9)) * 0.5 + 0.5;
-    float k = clamp(g + (sp - 0.5) * 0.34 * (1.0 - isBark), 0.0, 1.0);
-    k = smoothstep(0.05, 0.95, k);
-    vec3 leaf = mix(uLeafDark, uLeafLight, k);
-    vec3 bark = mix(uBarkDark, uBarkLight, k);
-    // Birch: dark dashes round the pale trunk.
+    float dist = length(vWorld - uCamPos);
+    float nv = max(dot(n, v), 0.0);
+    // Leaf texture: speckled clusters (coarse + fine), lighter tips on top, darker pockets underneath.
+    float fadeA = 1.0 - smoothstep(30.0, 95.0, dist);
+    float fadeB = 1.0 - smoothstep(14.0, 55.0, dist);
+    vec2 fa = flecks(vWorld * 3.4 + vCol.z * 13.0, 1.0);
+    vec2 fb = flecks(vWorld * 7.5 + vCol.z * 7.0, 5.0);
+    float tip = fa.x * fadeA * smoothstep(0.45, 0.9, fa.y) + fb.x * fadeB * smoothstep(0.5, 0.9, fb.y) * 0.8;
+    float pocket = fa.x * fadeA * smoothstep(0.55, 0.1, fa.y) * 0.9 + fb.x * fadeB * smoothstep(0.5, 0.1, fb.y) * 0.5;
+    float k = g + (hash(floor(vWorld * 1.3)) - 0.5) * 0.16 * (1.0 - isBark) + (tip * 0.34 - pocket * 0.30) * (1.0 - isBark);
+    k = clamp(k, 0.0, 1.0);
+    // Three-tone painted ramp: dark, mid, light with soft steps.
+    vec3 mid = mix(uLeafDark, uLeafLight, 0.5) * vec3(1.0, 1.02, 0.96);
+    vec3 leaf = mix(uLeafDark, mid, smoothstep(0.22, 0.42, k));
+    leaf = mix(leaf, uLeafLight, smoothstep(0.55, 0.78, k));
+    // Gentle hue drift cluster to cluster.
+    leaf *= 0.94 + 0.12 * vCol.z;
+    vec3 bark = mix(uBarkDark, uBarkLight, clamp(g, 0.0, 1.0));
+    // Bark grooves; birch gets dark dashes round the pale trunk.
     float birchy = step(0.9, uBarkLight.g);
     float dash = step(0.80, hash(vec3(floor(vWorld.y * 3.2), floor(vWorld.x * 6.0 + vWorld.z * 5.0), 1.0)));
     bark *= 1.0 - 0.62 * dash * birchy;
+    bark *= 0.86 + 0.14 * sin(atan(n.z, n.x) * 9.0 + vWorld.y * 2.0) * (1.0 - birchy);
     vec3 base = mix(leaf, bark, isBark) * uTint;
     float diff = clamp(dot(n, l) * 0.55 + 0.45, 0.0, 1.0);
     diff = mix(diff, smoothstep(0.25, 0.85, diff), 0.55);
-    vec3 sky = vec3(0.70, 0.80, 0.98);
-    vec3 gnd = vec3(0.34, 0.38, 0.26);
+    vec3 sky = vec3(0.72, 0.82, 1.0);
+    vec3 gnd = vec3(0.36, 0.40, 0.24);
     vec3 amb = mix(gnd, sky, n.y * 0.5 + 0.5) * 0.74;
-    vec3 lit = base * (amb + vec3(1.0, 0.96, 0.88) * diff * 0.80);
-    // Warm rim of sun on the lit upper edge of each puff.
-    vec3 v = normalize(uCamPos - vWorld);
-    float rim = pow(1.0 - max(dot(n, v), 0.0), 3.0) * max(dot(n, l), 0.0);
-    lit += uLeafLight * rim * 0.22 * (1.0 - isBark);
+    vec3 lit = base * (amb + vec3(1.0, 0.96, 0.86) * diff * 0.80);
+    // Warm rim of sun on the lit upper edge of each cluster.
+    float rim = pow(1.0 - nv, 3.0) * max(dot(n, l), 0.0);
+    lit += uLeafLight * rim * 0.20 * (1.0 - isBark);
+    // Thin darker edge on every cluster so the layers read as separate painted lumps.
+    float edge = smoothstep(0.30, 0.04, nv) * (1.0 - isBark);
+    lit = mix(lit, uLeafDark * vec3(0.30, 0.38, 0.30) * uTint, edge * 0.60);
     float lm = dot(lit, vec3(0.3, 0.59, 0.11));
-    lit = mix(vec3(lm), lit, 1.20);
-    float d = length(vWorld - uCamPos);
-    float fogAmt = smoothstep($FOG_START, $FOG_END, d);
+    lit = mix(vec3(lm), lit, 1.22);
+    float fogAmt = smoothstep($FOG_START, $FOG_END, dist);
     fragColor = vec4(mix(lit, uFogColor, fogAmt), 1.0);
 }
 """
