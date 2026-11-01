@@ -407,7 +407,16 @@ class HudView(context: Context, private val ctl: GameController) : View(context)
         p.style = Paint.Style.FILL
         text(c, "${hole.number}", bcx, bcy + 9 * d, 26f, Ui.WHITE, Paint.Align.CENTER, maxW = 2 * br * 0.8f)
         val tx = b.l + 62 * d
-        text(c, "PAR ${hole.par}", tx, b.t + 27 * d, 20f, Ui.GOLD, maxW = b.r - 12 * d - tx)
+        // little flag icon on the right of the banner
+        val fx = b.r - 18 * d; val fy = b.t + 12 * d
+        p.style = Paint.Style.STROKE; p.strokeWidth = 2.5f * d; p.color = Color.WHITE; p.strokeCap = Paint.Cap.ROUND
+        c.drawLine(fx, fy, fx, fy + 24 * d, p)
+        p.strokeCap = Paint.Cap.BUTT; p.style = Paint.Style.FILL
+        path.reset(); path.moveTo(fx, fy); path.lineTo(fx + 14 * d, fy + 5 * d); path.lineTo(fx, fy + 11 * d); path.close()
+        p.color = Ui.RED; c.drawPath(path, p)
+        p.style = Paint.Style.STROKE; p.strokeWidth = 1.5f * d; p.color = Color.WHITE; p.strokeJoin = Paint.Join.ROUND
+        c.drawPath(path, p); p.style = Paint.Style.FILL
+        text(c, "PAR ${hole.par}", tx, b.t + 27 * d, 20f, Ui.GOLD, maxW = fx - 6 * d - tx)
         val sub = if (ctl.isPutt) (if (ctl.distanceToPin <= 4f) "CHAINS" else "PUTT · CIRCLE ${ctl.puttCircle}") else hole.name.uppercase()
         text(c, sub, tx, b.t + 47 * d, 12f, if (ctl.isPutt) Ui.CYAN else Ui.WHITE, display = false, maxW = b.r - 12 * d - tx)
     }
@@ -423,8 +432,8 @@ class HudView(context: Context, private val ctl: GameController) : View(context)
         c.rotate(Math.toDegrees(ang.toDouble()).toFloat(), cx, cy)
         bigArrow(c, cx, cy, 9 * d, 3.2f * d, Ui.WHITE)
         c.restore()
-        text(c, "${ctl.distanceToPin.toInt()} m", b.l + 34 * d, cy + 7 * d, 19f, Ui.WHITE, maxW = 62 * d)
-        text(c, "TO PIN", b.r - 10 * d, cy + 4 * d, 10f, Color.parseColor("#D9FFE6"), Paint.Align.RIGHT, display = false)
+        text(c, "${ctl.distanceToPin.toInt()} m", b.l + 34 * d, cy + 7 * d, 16f, Ui.WHITE, maxW = 38 * d)
+        text(c, "PIN", b.r - 10 * d, cy + 4 * d, 9f, Color.parseColor("#D9FFE6"), Paint.Align.RIGHT, display = false)
     }
 
     // (5) strokes / par / total-vs-par panel
@@ -441,14 +450,13 @@ class HudView(context: Context, private val ctl: GameController) : View(context)
         val cols = intArrayOf(Ui.GOLD, Ui.WHITE, relCol)
         for (i in 0..2) {
             val cx = b.l + cw * (i + 0.5f)
-            text(c, labels[i], cx, b.t + 16 * d, 9f, Ui.METAL, Paint.Align.CENTER, display = false)
-            text(c, values[i], cx, b.t + 42 * d, 24f, cols[i], Paint.Align.CENTER, maxW = cw - 10 * d)
+            text(c, labels[i], cx, b.t + 15 * d, 9f, Ui.METAL, Paint.Align.CENTER, display = false)
+            text(c, values[i], cx, b.t + 39 * d, 24f, cols[i], Paint.Align.CENTER, maxW = cw - 10 * d)
             if (i > 0) {
                 p.style = Paint.Style.FILL; p.color = Color.argb(120, 255, 255, 255)
                 c.drawRect(b.l + cw * i - 1 * d, b.t + 9 * d, b.l + cw * i + 1 * d, b.b - 9 * d, p)
             }
         }
-        text(c, "LV ${ctl.profile.level}  ${ctl.profile.name.uppercase()}", b.centerXf(), b.b + 17 * d, 12f, Ui.METAL, Paint.Align.CENTER, display = false, maxW = b.w)
     }
 
     // (2) wind compass dial: arrow rotates relative to your aim, speed number underneath

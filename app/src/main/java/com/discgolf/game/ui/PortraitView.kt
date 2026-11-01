@@ -106,21 +106,32 @@ class PortraitView(context: Context) : View(context) {
         val breathe = sin(t * 2.4f + 0.6f) * 0.5f * u
         val blink = (t % 3.4f) > 3.25f
         canvas.save()
-        canvas.scale(0.85f, 0.85f, cx, h * 0.12f)   // shrink golfer so the torso sits inside the card with margin
+        canvas.scale(0.92f, 0.92f, cx, h)   // pivot on the card bottom: bust stays planted, head keeps a top margin
         canvas.translate(0f, bob)
 
         val headCy = h * 0.40f
         val headRx = 15f * u
         val headRy = 18f * u
 
-        // shoulders / shirt
-        p.color = c(shirt)
-        rect.set(cx - 34f * u * build, h * 0.66f + breathe, cx + 34f * u * build, h * 0.93f)
-        canvas.drawRoundRect(rect, 18f * u, 18f * u, p)
-        outline(canvas, u, c(shirt, 0.55f)) { canvas.drawRoundRect(rect, 18f * u, 18f * u, p) }
+        // shoulders / shirt: sloped shoulders and torso running off the bottom of the card
+        val sTop = h * 0.66f + breathe
+        val sw = 36f * u * build
+        val sBot = h * 1.2f
+        path.reset()
+        path.moveTo(cx - sw, sBot)
+        path.lineTo(cx - sw, sTop + 16f * u)
+        path.quadTo(cx - sw, sTop + 3f * u, cx - sw * 0.62f, sTop + 1.5f * u)
+        path.quadTo(cx - 9f * u, sTop - 1f * u, cx - 7f * u, sTop - 4f * u)
+        path.lineTo(cx + 7f * u, sTop - 4f * u)
+        path.quadTo(cx + 9f * u, sTop - 1f * u, cx + sw * 0.62f, sTop + 1.5f * u)
+        path.quadTo(cx + sw, sTop + 3f * u, cx + sw, sTop + 16f * u)
+        path.lineTo(cx + sw, sBot)
+        path.close()
+        p.color = c(shirt); canvas.drawPath(path, p)
+        outline(canvas, u, c(shirt, 0.55f)) { canvas.drawPath(path, p) }
         p.color = Color.argb(60, 255, 255, 255)
-        rect.set(cx - 28f * u * build, h * 0.675f + breathe, cx - 8f * u, h * 0.72f + breathe)
-        canvas.drawRoundRect(rect, 3f * u, 3f * u, p)
+        rect.set(cx - sw * 0.8f, sTop + 3f * u, cx - 10f * u, sTop + 7f * u)
+        canvas.drawRoundRect(rect, 2f * u, 2f * u, p)
         // neck
         p.color = c(skin, 0.88f)
         rect.set(cx - 6f * u, headCy + headRy * 0.6f, cx + 6f * u, h * 0.70f + breathe)

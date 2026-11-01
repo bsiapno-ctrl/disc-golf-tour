@@ -163,8 +163,8 @@ class MenuActivity : Activity() {
                 orientation = LinearLayout.VERTICAL
                 gravity = Gravity.CENTER_HORIZONTAL
             }
-            val ph = if (portrait) 150f else 190f
-            val pw = if (portrait) 120f else 150f
+            val ph = if (portrait) 150f else 215f
+            val pw = if (portrait) 120f else 170f
             val face = PortraitView(this).apply { look = profile.look }
             card.addView(face, LinearLayout.LayoutParams(s(pw), s(ph)))
             val plate = LinearLayout(this).apply {

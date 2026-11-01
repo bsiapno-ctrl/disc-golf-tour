@@ -138,6 +138,26 @@ class SceneView(ctx: Context) : View(ctx) {
         p.color = color; c.drawPath(path, p)
     }
 
+    /** Round-crowned tree silhouettes standing along a hill crest (same curve as [hill]). */
+    private fun trees(c: android.graphics.Canvas, w: Float, base: Float, amp: Float, freq: Float, phase: Float, sc: Float, color: Int, count: Int) {
+        p.color = color
+        for (i in 0 until count) {
+            val x = w * (i + 0.5f + 0.35f * kotlin.math.sin(i * 12.9f)) / count
+            val a = x / w * 6.2832f
+            val y = base + amp * (kotlin.math.sin(a * freq + phase) * 0.7f + kotlin.math.sin(a * freq * 2.3f + phase * 1.7f) * 0.3f)
+            val th = (26f + 14f * (0.5f + 0.5f * kotlin.math.sin(i * 7.3f))) * sc
+            c.drawRect(x - 1.8f * sc, y - th * 0.45f, x + 1.8f * sc, y + 2f * sc, p)
+            if (i % 3 == 1) {   // pine
+                path.reset(); path.moveTo(x, y - th * 1.25f); path.lineTo(x - th * 0.32f, y - th * 0.2f); path.lineTo(x + th * 0.32f, y - th * 0.2f); path.close()
+                c.drawPath(path, p)
+            } else {
+                c.drawCircle(x, y - th * 0.7f, th * 0.42f, p)
+                c.drawCircle(x - th * 0.28f, y - th * 0.48f, th * 0.3f, p)
+                c.drawCircle(x + th * 0.28f, y - th * 0.48f, th * 0.3f, p)
+            }
+        }
+    }
+
     override fun onDraw(c: android.graphics.Canvas) {
         val w = width.toFloat(); val h = height.toFloat()
         if (w <= 0f) return
@@ -155,17 +175,36 @@ class SceneView(ctx: Context) : View(ctx) {
         for (i in 0 until 4) {
             val speed = (6f + i * 3f) * u
             val x = ((t * speed + i * span / 4f) % span) - 100f * u
-            cloud(c, x, h * (0.12f + 0.11f * ((i * 5) % 4)), (0.8f + 0.15f * (i % 3)) * u)
+            cloud(c, x, h * (0.12f + 0.11f * ((i * 5) % 4)), (1.3f + 0.25f * (i % 3)) * u)
         }
-        hill(c, w, h, h * 0.56f, 34f * u, 1.1f, 0.5f, Color.parseColor("#8FD9A8"))
+        // sun rays
+        p.color = Color.argb(28, 255, 250, 200)
+        for (i in 0 until 9) {
+            val a0 = Math.toRadians((t * 4.0 + i * 40.0)); val a1 = Math.toRadians((t * 4.0 + i * 40.0 + 12.0))
+            path.reset(); path.moveTo(sx, sy)
+            path.lineTo(sx + (w * 1.6f * Math.cos(a0)).toFloat(), sy + (w * 1.6f * Math.sin(a0)).toFloat())
+            path.lineTo(sx + (w * 1.6f * Math.cos(a1)).toFloat(), sy + (w * 1.6f * Math.sin(a1)).toFloat())
+            path.close(); c.drawPath(path, p)
+        }
+        hill(c, w, h, h * 0.56f, 34f * u, 1.1f, 0.5f, Color.parseColor("#9ADFB0"))
+        trees(c, w, h * 0.56f, 34f * u, 1.1f, 0.5f, u * 0.7f, Color.parseColor("#7CCB94"), 11)
         hill(c, w, h, h * 0.67f, 30f * u, 0.8f, 2.4f, Color.parseColor("#5CC66E"))
+        trees(c, w, h * 0.67f, 30f * u, 0.8f, 2.4f, u * 0.95f, Color.parseColor("#2E9A52"), 8)
         hill(c, w, h, h * 0.79f, 22f * u, 1.4f, 4.0f, Color.parseColor("#3FB04F"))
-        // mown stripes on the fairway
+        // striped fairway foreground: bands widen toward the viewer
         val top = h * 0.86f
         p.color = Color.parseColor("#37A346"); c.drawRect(0f, top, w, h, p)
-        p.color = Color.parseColor("#44B854")
-        var x = -40f * u
-        while (x < w) { c.drawRect(x, top, x + 30f * u, h, p); x += 60f * u }
+        p.color = Color.parseColor("#4CC25C")
+        val n = 14
+        for (i in 0 until n step 2) {
+            val x0a = w * (i / n.toFloat()); val x1a = w * ((i + 1) / n.toFloat())
+            val fan = (i - n / 2f)
+            path.reset()
+            path.moveTo(w / 2f + (x0a - w / 2f) * 0.35f, top); path.lineTo(w / 2f + (x1a - w / 2f) * 0.35f, top)
+            path.lineTo(x1a + fan * 0.0f, h); path.lineTo(x0a, h); path.close()
+            c.drawPath(path, p)
+        }
+        p.color = Color.argb(70, 255, 255, 255); c.drawRect(0f, top, w, top + 3f * u, p)
         // far flag
         val fx = w * 0.62f; val fy = h * 0.655f
         p.color = Color.WHITE; c.drawRect(fx, fy - 26f * u, fx + 1.6f * u, fy, p)
