@@ -135,7 +135,7 @@ class GameRenderer(private val context: android.content.Context, private val ctl
         val hole = ctl.hole
         val ground = terrain?.takeIf { it.hole === hole } ?: run {
             terrain?.release()
-            TerrainRender(hole).also { terrain = it }
+            TerrainRender(hole, sun).also { terrain = it }
         }
         GLES30.glDisable(GLES30.GL_BLEND)
         terrainShader.draw(ground, vp, camPos, sun)
@@ -601,11 +601,7 @@ class GameRenderer(private val context: android.content.Context, private val ctl
     }
 
     private fun drawShadows(h: Hole, f: DiscFlight?) {
-        for (t in h.trees) {
-            val dx = t.x - camPos.x; val dz = t.z - camPos.z
-            if (dx * dx + dz * dz > 200f * 200f) continue
-            draw(meshes.disc, xfGround(h, t.x + 0.8f, t.z + 0.6f, 0.05f, treeScale(t) * treeWiden(t) * 0.30f, treeScale(t) * treeWiden(t) * 0.30f), 0f, 0f, 0f, 0.20f)
-        }
+        // Tree shadows are baked into the ground shader's shade map (TerrainRender), so only the golfer and disc are drawn here.
         // Golfer
         val at = if (ctl.phase == Phase.INTRO || ctl.phase == Phase.AIMING || ctl.phase == Phase.CHARGING || ctl.phase == Phase.ACCURACY) ctl.lie else ctl.throwOrigin
         // Soft contact blob under the feet: stacked discs fake a smooth falloff. Then the longer cast shadow.
@@ -681,6 +677,7 @@ uniform vec3 uFogColor;
 uniform float uStripe;
 uniform float uEmissive;
 out vec4 fragColor;
+$GRADE_GLSL
 void main() {
     vec3 n = normalize(vNormal);
     float diff = max(dot(n, normalize(uLightDir)), 0.0);
@@ -696,7 +693,7 @@ void main() {
     lit = mix(lit, base, uEmissive);
     float d = length(vWorld - uCamPos);
     float fogAmt = smoothstep($FOG_START, $FOG_END, d);
-    fragColor = vec4(mix(lit, uFogColor, fogAmt), uColor.a);
+    fragColor = vec4(uEmissive > 0.5 ? mix(lit, uFogColor, fogAmt) : grade(mix(lit, uFogColor, fogAmt)), uColor.a);
 }
 """
     }

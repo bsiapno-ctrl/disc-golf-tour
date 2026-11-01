@@ -346,6 +346,7 @@ class SkinShader {
     private val uOutline = GLES30.glGetUniformLocation(prog, "uOutline")
     private val uViewport = GLES30.glGetUniformLocation(prog, "uViewport")
     private val uKind = GLES30.glGetUniformLocation(prog, "uKind")
+    private val uShoe = GLES30.glGetUniformLocation(prog, "uShoe")
     private val rows = FloatArray(MAX_BONES * 12)
     private val vp = IntArray(4)
     private var outlinePx = 2f
@@ -355,11 +356,15 @@ class SkinShader {
         GLES30.glUniform3f(uLight, sun[0], sun[1], sun[2])
         GLES30.glUniform3f(uCam, cx, cy, cz)
         GLES30.glUniform3f(uFog, HORIZON_R, HORIZON_G, HORIZON_B)
+        GLES30.glUniform4f(uShoe, 0f, 0f, 0f, 0f)
         GLES30.glGetIntegerv(GLES30.GL_VIEWPORT, vp, 0)
         GLES30.glUniform2f(uViewport, max(vp[2], 1).toFloat(), max(vp[3], 1).toFloat())
         // A thin clean line: about 0.33% of the screen height, never under 1.5 px.
         outlinePx = (vp[3] * 0.0033f).coerceIn(1.5f, 4f)
     }
+
+    /** Cloth that reaches down to the ground (a character whose shoes share the shirt's material) is painted this colour near the floor. Call after [begin]. */
+    fun setShoe(c: FloatArray?) { GLES30.glUniform4f(uShoe, c?.get(0) ?: 0f, c?.get(1) ?: 0f, c?.get(2) ?: 0f, if (c != null) 1f else 0f) }
 
     /** [tint] maps a material name to a colour override (r, g, b), or null to keep the model's own. */
     fun draw(model: SkinnedModel, mvp: FloatArray, world: FloatArray, tint: (String) -> FloatArray?) {
@@ -388,7 +393,7 @@ class SkinShader {
             val kind = when {
                 p.material.startsWith("Skin") -> 2f
                 p.material == "Hair" || p.material == "Eyebrows" -> 3f
-                over != null -> 1f
+                over != null -> if (over.size > 3) over[3] else 1f   // an optional 4th number picks the surface kind
                 else -> 0f
             }
             GLES30.glUniform1f(uKind, kind)
@@ -456,6 +461,7 @@ in vec3 vWorld;
 in vec3 vRest;
 in float vLocalY;
 uniform float uKind;
+uniform vec4 uShoe;
 uniform vec3 uColor;
 uniform vec3 uLightDir;
 uniform vec3 uCamPos;
@@ -464,17 +470,38 @@ uniform float uOutline;
 out vec4 fragColor;
 
 float ell(vec2 p, vec2 c, vec2 r) { vec2 q = (p - c) / r; return 1.0 - dot(q, q); }
+float hash(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
+float vnoise(vec2 p) {
+    vec2 i = floor(p), f = fract(p);
+    f = f * f * (3.0 - 2.0 * f);
+    return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), f.x), mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), f.x), f.y);
+}
 
+$GRADE_GLSL
 void main() {
     if (uOutline > 0.0) { fragColor = vec4(0.13, 0.09, 0.13, 1.0); return; }
     vec3 n = normalize(vNormal);
     vec3 L = normalize(uLightDir);
-    // Brighter, more saturated than the model's own colours.
-    float lum0 = dot(uColor, vec3(0.30, 0.59, 0.11));
-    vec3 base = min(mix(vec3(lum0), uColor, 1.35) * 1.12, vec3(1.0));
     bool skin = uKind > 1.5 && uKind < 2.5;
     bool hair = uKind > 2.5 && uKind < 3.5;
     bool cloth = uKind > 0.5 && uKind < 1.5;
+    bool shoe = uKind > 4.5;
+    vec3 inCol = uColor;
+    // Characters whose shoes share the shirt's material get their own shoe colour near the floor.
+    if (cloth && uShoe.a > 0.5) inCol = mix(uShoe.rgb, uColor, smoothstep(0.075, 0.105, vLocalY));
+    // Brighter, more saturated than the model's own colours.
+    float lum0 = dot(inCol, vec3(0.30, 0.59, 0.11));
+    vec3 base = min(mix(vec3(lum0), inCol, 1.30) * 1.10, vec3(1.0));
+    // Fabric folds: a cheap normal perturbation from noise in rest-pose space (so it sticks to the body as it moves),
+    // long creases across the torso and arms. The banded light below turns it into crisp toon fold shapes.
+    float foldMask = 0.0;
+    if (cloth) {
+        float f1 = sin(vRest.y * 38.0 + vnoise(vRest.xz * 7.0 + vRest.y * 2.0) * 7.0);
+        float f2 = sin(vRest.x * 26.0 + vRest.y * 9.0 + vnoise(vRest.yz * 6.0 + 4.0) * 6.0);
+        float f3 = vnoise(vRest.xy * 21.0 + vRest.z * 5.0) - 0.5;
+        n = normalize(n + vec3(f2 * 0.15 + f3 * 0.22, f1 * 0.16, f2 * 0.08 - f3 * 0.2));
+        foldMask = f1 * 0.5 + 0.5;
+    }
     float wrap = dot(n, L) * 0.5 + 0.5;
     // Three flat bands with soft edges: a cool shadow, a neutral middle and a warm key-lit top.
     vec3 sh  = base * (skin ? vec3(0.76, 0.56, 0.62) : vec3(0.56, 0.58, 0.86)) + vec3(0.015, 0.03, 0.08);
@@ -487,17 +514,23 @@ void main() {
     // Cheap occlusion: surfaces facing down or sideways near the body and the ground read as tucked in.
     float ao = mix(0.78, 1.0, smoothstep(-0.2, 0.6, n.y)) * mix(0.84, 1.0, smoothstep(0.0, 0.40, vLocalY));
     lit *= ao;
-    // Cloth: fine weave bands, a softly darker hem and underarm, brighter shoulders.
+    // Cloth: crease shading in the troughs of the folds, a softly darker hem and underarm, brighter shoulders.
     if (cloth) {
-        lit *= 1.0 - 0.04 * smoothstep(0.35, 0.65, sin(vLocalY * 120.0) * 0.5 + 0.5);
+        lit *= 1.0 - 0.07 * smoothstep(0.55, 0.9, foldMask) * (0.5 + 0.5 * smoothstep(-0.2, 0.5, n.y));
         lit *= mix(0.90, 1.05, smoothstep(0.60, 1.50, vLocalY));
         lit *= 1.0 - 0.10 * (1.0 - smoothstep(0.0, 0.05, abs(vLocalY - 0.78)));     // waistband line
     }
     // Hair: a glossy band of light across the crown, darker toward the nape.
     if (hair) {
         vec3 hv = normalize(L + normalize(uCamPos - vWorld));
-        lit += vec3(1.0, 0.95, 0.85) * smoothstep(0.84, 0.90, dot(n, hv)) * 0.30;
-        lit *= mix(0.74, 1.0, smoothstep(1.50, 1.70, vLocalY));
+        // Strands: thin bands that run down the head, light and dark, and a highlight that breaks up along them.
+        float strand = vnoise(vec2(vRest.x * 60.0 + vRest.z * 34.0, vRest.y * 8.0 + vnoise(vRest.xz * 11.0) * 2.5));
+        float clump = vnoise(vec2(vRest.x * 17.0 - vRest.z * 11.0, vRest.y * 4.0));
+        float sh1 = smoothstep(0.80, 0.92, dot(n, hv) + (strand - 0.5) * 0.10);
+        lit *= 0.80 + 0.40 * smoothstep(0.22, 0.78, strand) + 0.14 * (clump - 0.5);
+        lit += vec3(1.0, 0.93, 0.78) * sh1 * (0.20 + 0.28 * strand);
+        lit *= mix(0.70, 1.0, smoothstep(1.50, 1.72, vLocalY));
+        lit = mix(lit, lit * vec3(1.18, 1.10, 0.92), 0.25 * smoothstep(0.5, 0.9, clump));
     }
     if (skin) {
         // Shadow under the chin and hairline, rosier hands and forearms than the face.
@@ -530,12 +563,23 @@ void main() {
         lit *= mix(0.55, 1.0, smoothstep(0.015, 0.045, vLocalY));
         lit += vec3(0.10) * (1.0 - smoothstep(0.045, 0.065, abs(vLocalY - 0.055)));
     }
+    if (shoe || (cloth && uShoe.a > 0.5 && vLocalY < 0.10)) {
+        // Sneaker detail: white midsole stripe, a darker collar line, stitched seams and a faint toe-cap shine.
+        float msole = 1.0 - smoothstep(0.010, 0.022, abs(vLocalY - 0.030));
+        lit = mix(lit, vec3(0.96, 0.95, 0.92), msole * 0.9);
+        lit *= 1.0 - 0.18 * (1.0 - smoothstep(0.004, 0.012, abs(vLocalY - 0.085)));
+        lit *= 1.0 - 0.07 * smoothstep(0.7, 1.0, sin(vRest.z * 95.0 + vRest.x * 40.0));
+        lit += vec3(1.0, 0.95, 0.85) * 0.16 * smoothstep(0.55, 0.9, n.y) * step(0.045, vLocalY);
+    }
     vec3 vdir = normalize(uCamPos - vWorld);
     float f = 1.0 - max(dot(n, vdir), 0.0);
-    float rim = smoothstep(0.58, 0.86, f);
-    lit += mix(vec3(0.55, 0.75, 1.0), vec3(1.0, 0.92, 0.70), smoothstep(0.3, 0.7, wrap)) * rim * (hair ? 0.14 : 0.30);
+    float rim = smoothstep(0.52, 0.86, f);
+    // Warm sun-coloured rim on the edges that face the sun (it is ahead of and beside the golfer), a faint cool one elsewhere.
+    float sunSide = smoothstep(-0.1, 0.55, dot(n, L));
+    lit += vec3(1.0, 0.80, 0.48) * rim * sunSide * (hair ? 0.32 : 0.50);
+    lit += vec3(0.50, 0.70, 1.0) * rim * (1.0 - sunSide) * 0.14;
     float d = length(vWorld - uCamPos);
-    fragColor = vec4(mix(lit, uFogColor, smoothstep($FOG_START, $FOG_END, d)), 1.0);
+    fragColor = vec4(grade(mix(lit, uFogColor, smoothstep($FOG_START, $FOG_END, d))), 1.0);
 }
 """
     }

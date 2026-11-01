@@ -32,3 +32,18 @@ const val FOG_END = 340f
 const val HORIZON_R = 0.80f
 const val HORIZON_G = 0.89f
 const val HORIZON_B = 0.95f
+
+/**
+ * Final colour grade shared by every fragment shader (no post-processing pass): a touch more saturation, a gentle S-curve
+ * for contrast, and warm sunlit highlights. Spliced into the shaders as `$GRADE_GLSL`.
+ */
+const val GRADE_GLSL = """vec3 grade(vec3 c) {
+    c = clamp(c, 0.0, 1.0);
+    float l = dot(c, vec3(0.30, 0.59, 0.11));
+    c = mix(vec3(l), c, 1.10);
+    c = clamp(c, 0.0, 1.0);
+    c = mix(c, c * c * (3.0 - 2.0 * c), 0.24);
+    c *= mix(vec3(0.99, 1.0, 1.02), vec3(1.05, 1.015, 0.93), smoothstep(0.35, 0.95, l));
+    return c;
+}
+"""

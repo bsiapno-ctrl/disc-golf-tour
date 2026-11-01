@@ -146,6 +146,7 @@ vec2 flecks(vec3 p, float seed) {
     float on = step(0.20, h) * (1.0 - smoothstep(0.30, 0.46, r));
     return vec2(on, clamp(-d.y * 2.2 + 0.5, 0.0, 1.0));
 }
+$GRADE_GLSL
 void main() {
     vec3 n = normalize(vNormal);
     vec3 l = normalize(uLightDir);
@@ -191,7 +192,7 @@ void main() {
     float lm = dot(lit, vec3(0.3, 0.59, 0.11));
     lit = mix(vec3(lm), lit, 1.22);
     float fogAmt = smoothstep($FOG_START, $FOG_END, dist);
-    fragColor = vec4(mix(lit, uFogColor, fogAmt), 1.0);
+    fragColor = vec4(grade(mix(lit, uFogColor, fogAmt)), 1.0);
 }
 """
     }
