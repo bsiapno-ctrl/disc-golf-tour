@@ -42,6 +42,8 @@ class HudView(context: Context, private val ctl: GameController) : View(context)
 
     /** -1..1 aim stick command (0 when released). Read by the activity every frame. */
     val touchAim: Float get() = stick.output
+    /** -1..1 aim-point command (stick up = further down the hole). */
+    val touchAimY: Float get() = stick.outputY
     private val stick = AimStick()
 
     private class Pop(val ev: ProgressEvent, var age: Float = 0f)
@@ -131,7 +133,7 @@ class HudView(context: Context, private val ctl: GameController) : View(context)
         when (e.actionMasked) {
             MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN -> down(id, e.getX(idx), e.getY(idx))
             MotionEvent.ACTION_UP, MotionEvent.ACTION_POINTER_UP -> up(id)
-            MotionEvent.ACTION_MOVE -> for (i in 0 until e.pointerCount) stick.move(e.getPointerId(i), e.getX(i))
+            MotionEvent.ACTION_MOVE -> for (i in 0 until e.pointerCount) stick.move(e.getPointerId(i), e.getX(i), e.getY(i))
             MotionEvent.ACTION_CANCEL -> { up(actionPointer); up(stick.pointer) }
         }
         return true

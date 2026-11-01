@@ -20,8 +20,14 @@ object AimCurve {
     }
 }
 
+/** Clamp a 2D deflection radially into the unit circle (unit-tested). Returns (x, y). */
+fun clampRadial(x: Float, y: Float): Pair<Float, Float> {
+    val m = hypot(x, y)
+    return if (m > 1f) Pair(x / m, y / m) else Pair(x, y)
+}
+
 /**
- * Joystick-style aim control. Horizontal drag only. Either a fixed base, or a floating base that
+ * Joystick-style aim control. Full 2D: x turns the aim, y (up = +) moves the aim point. Either a fixed base, or a floating base that
  * appears under the thumb. Knob follows the finger (clamped to the base) and springs back on release.
  */
 class AimStick {
@@ -30,12 +36,15 @@ class AimStick {
         private set
     var floating = false
         private set
-    private var knobX = 0f   // -1..1
+    private var knobX = 0f   // -1..1, right = +
+    private var knobY = 0f   // -1..1, screen-down = +
     private var fx = 0f; var fy = 0f
 
     val active get() = pointer >= 0
-    /** Aim turn command in -1..1. */
+    /** Aim turn command in -1..1 (right = +). */
     val output get() = if (active) AimCurve.response(knobX) else 0f
+    /** Aim-point command in -1..1 (up = + = further down the hole). */
+    val outputY get() = if (active) AimCurve.response(-knobY) else 0f
 
     fun layout(x: Float, y: Float, r: Float) { cx = x; cy = y; radius = r }
 
@@ -43,14 +52,17 @@ class AimStick {
 
     fun down(id: Int, x: Float, y: Float, float: Boolean) {
         pointer = id; floating = float
-        if (float) { fx = x; fy = y; knobX = 0f } else { fx = cx; fy = cy; knobX = dev(x) }
+        if (float) { fx = x; fy = y; knobX = 0f; knobY = 0f } else { fx = cx; fy = cy; dev(x, y) }
     }
 
-    private fun dev(x: Float) = ((x - fx) / radius).coerceIn(-1f, 1f)
+    private fun dev(x: Float, y: Float) {
+        val (dx, dy) = clampRadial((x - fx) / radius, (y - fy) / radius)
+        knobX = dx; knobY = dy
+    }
 
-    fun move(id: Int, x: Float) { if (id == pointer) knobX = dev(x) }
+    fun move(id: Int, x: Float, y: Float) { if (id == pointer) dev(x, y) }
 
-    fun up(id: Int): Boolean { if (id != pointer) return false; pointer = -1; knobX = 0f; return true }
+    fun up(id: Int): Boolean { if (id != pointer) return false; pointer = -1; knobX = 0f; knobY = 0f; return true }
 
     fun draw(c: Canvas, p: Paint, d: Float, enabled: Boolean) {
         if (floating && !active) return
@@ -63,17 +75,22 @@ class AimStick {
         c.drawCircle(bx, by, radius, p)
         p.strokeWidth = 2.5f * d; p.color = metal
         c.drawCircle(bx, by, radius - 2f * d, p)
-        // tick marks at centre
-        p.strokeWidth = 2f * d; p.color = Ui.METAL_DARK
-        c.drawLine(bx, by - radius * 0.35f, bx, by + radius * 0.35f, p)
+        // 8 subtle direction ticks on the ring
+        p.strokeWidth = 2f * d; p.color = 0x55FFFFFF.toInt()
+        for (i in 0 until 8) {
+            val a = i * (Math.PI / 4).toFloat()
+            val ca = kotlin.math.cos(a); val sa = kotlin.math.sin(a)
+            c.drawLine(bx + ca * radius * 0.82f, by + sa * radius * 0.82f, bx + ca * radius * 0.94f, by + sa * radius * 0.94f, p)
+        }
         val kx = bx + knobX * radius * 0.75f
+        val ky = by + knobY * radius * 0.75f
         val kr = radius * 0.46f
         p.style = Paint.Style.FILL; p.color = if (active) Ui.GOLD else metal
-        c.drawCircle(kx, by, kr, p)
+        c.drawCircle(kx, ky, kr, p)
         p.style = Paint.Style.STROKE; p.strokeWidth = 3.5f * d; p.color = Ui.NAVY
-        c.drawCircle(kx, by, kr, p)
+        c.drawCircle(kx, ky, kr, p)
         p.strokeWidth = 2f * d; p.color = 0x88FFFFFF.toInt()
-        c.drawCircle(kx, by - kr * 0.12f, kr * 0.62f, p)
+        c.drawCircle(kx, ky - kr * 0.12f, kr * 0.62f, p)
         p.style = Paint.Style.FILL
     }
 }

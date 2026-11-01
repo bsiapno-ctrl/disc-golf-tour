@@ -27,7 +27,7 @@ import kotlin.math.min
  *
  * Controller layout:
  *   A / Space / right trigger ....... hold to charge power, release to lock it, press again to stop the accuracy marker
- *   Left stick or keyboard A/D ...... aim
+ *   Left stick or keyboard A/D ...... aim turn; stick up/down or W/S + keyboard arrows = aim point
  *   D-pad left/right or L1/R1 ....... change disc
  *   D-pad up/down ................... change shot shape (hyzer / flat / anhyzer)
  *   Y ............................... scorecard        Start / B / Back ... pause
@@ -42,6 +42,8 @@ class GameActivity : Activity() {
     private var lastNanos = 0L
     private var looping = false
     private var stickX = 0f
+    private var stickY = 0f
+    private var keyAimY = 0
     private var keyAim = 0
     private var aimHold = 0f
     private var triggerDown = false
@@ -138,6 +140,9 @@ class GameActivity : Activity() {
                 ctl.aim(aim.coerceIn(-1f, 1f) * speed * dt)
             } else aimHold = 0f
 
+            val ay = (hud.touchAimY + keyAimY + stickY).coerceIn(-1f, 1f)
+            if (ay != 0f) ctl.aimPoint(ay, dt)
+
             ctl.update(dt)
 
             val ph = ctl.phase
@@ -186,8 +191,16 @@ class GameActivity : Activity() {
                 if (fromPad(e)) { if (e.repeatCount == 0) ctl.nextDisc(1) } else keyAim = 1
                 return true
             }
-            KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_W -> { if (e.repeatCount == 0) ctl.nextShape(1); return true }
-            KeyEvent.KEYCODE_DPAD_DOWN, KeyEvent.KEYCODE_S -> { if (e.repeatCount == 0) ctl.nextShape(-1); return true }
+            KeyEvent.KEYCODE_DPAD_UP -> {
+                if (fromPad(e)) { if (e.repeatCount == 0) ctl.nextShape(1) } else keyAimY = 1
+                return true
+            }
+            KeyEvent.KEYCODE_DPAD_DOWN -> {
+                if (fromPad(e)) { if (e.repeatCount == 0) ctl.nextShape(-1) } else keyAimY = -1
+                return true
+            }
+            KeyEvent.KEYCODE_W -> { keyAimY = 1; return true }
+            KeyEvent.KEYCODE_S -> { keyAimY = -1; return true }
             KeyEvent.KEYCODE_A -> { keyAim = -1; return true }
             KeyEvent.KEYCODE_D -> { keyAim = 1; return true }
         }
@@ -201,6 +214,8 @@ class GameActivity : Activity() {
             KeyEvent.KEYCODE_SPACE, KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_DPAD_CENTER -> { handleAction(false); return true }
             KeyEvent.KEYCODE_DPAD_LEFT -> { if (!fromPad(e)) keyAim = 0; return true }
             KeyEvent.KEYCODE_DPAD_RIGHT -> { if (!fromPad(e)) keyAim = 0; return true }
+            KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN -> { if (!fromPad(e)) keyAimY = 0; return true }
+            KeyEvent.KEYCODE_W, KeyEvent.KEYCODE_S -> { keyAimY = 0; return true }
             KeyEvent.KEYCODE_A, KeyEvent.KEYCODE_D -> { keyAim = 0; return true }
         }
         return super.onKeyUp(keyCode, e)
@@ -211,6 +226,8 @@ class GameActivity : Activity() {
         if (e.source and InputDevice.SOURCE_JOYSTICK == InputDevice.SOURCE_JOYSTICK && e.action == MotionEvent.ACTION_MOVE) {
             val x = e.getAxisValue(MotionEvent.AXIS_X)
             stickX = if (abs(x) < 0.18f) 0f else x
+            val y = -e.getAxisValue(MotionEvent.AXIS_Y)
+            stickY = if (abs(y) < 0.18f) 0f else y
 
             val hx = Math.round(e.getAxisValue(MotionEvent.AXIS_HAT_X))
             val hy = Math.round(e.getAxisValue(MotionEvent.AXIS_HAT_Y))

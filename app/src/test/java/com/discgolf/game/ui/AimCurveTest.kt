@@ -27,4 +27,18 @@ class AimCurveTest {
         assertTrue(AimCurve.response(0.25f) < 0.12f)
         assertTrue(AimCurve.response(0.5f) < 0.35f)
     }
+
+    @Test fun radialClampKeepsDirectionAndUnitLength() {
+        val (x, y) = clampRadial(3f, 4f)
+        assertEquals(0.6f, x, 1e-5f); assertEquals(0.8f, y, 1e-5f)
+        val (a, b) = clampRadial(0.3f, -0.2f)
+        assertEquals(0.3f, a, 0f); assertEquals(-0.2f, b, 0f)
+    }
+
+    @Test fun axesAreIndependentWithDeadZone() {
+        assertEquals(0f, AimCurve.response(0.03f), 0f)
+        assertTrue(AimCurve.response(0.5f) > 0f)
+        assertEquals(-AimCurve.response(0.7f), AimCurve.response(-0.7f), 1e-6f)
+        assertEquals(1f, AimCurve.response(1f), 1e-5f)
+    }
 }
