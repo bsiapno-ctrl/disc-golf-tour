@@ -430,4 +430,19 @@ class CoreTest {
         while (f.state == FlightState.FLYING && n++ < 6000) f.step(Launcher.SIM_DT)
         assertTrue(f.pos.distanceXZ(endGuide) < 1.5f)
     }
+
+    @Test fun aimPointDistanceAndPitchAreClamped() {
+        val g = GameController(golfer(), seed = 42L)
+        var n = 0
+        while (g.phase != Phase.AIMING && n++ < 2000) g.update(0.1f)
+        assertEquals(Phase.AIMING, g.phase)
+        repeat(200) { g.aimPoint(1f, 0.1f); g.update(0.1f) }
+        assertEquals(GameController.MAX_AIM_DIST, g.aimDistance, 1e-4f)
+        assertTrue(g.aimPitch in 0.9f..1f)
+        repeat(400) { g.aimPoint(-1f, 0.1f); g.update(0.1f) }
+        assertEquals(GameController.MIN_AIM_DIST, g.aimDistance, 1e-4f)
+        assertTrue(g.aimPitch in -1f..-0.9f)
+        g.aimDistance = 1000f
+        assertEquals(GameController.MAX_AIM_DIST, g.aimDistance, 0f)
+    }
 }

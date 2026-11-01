@@ -108,6 +108,22 @@ class GameController(
     private var preThrowLie = Vec3.ZERO
     /** How far down the fairway the caddie aims. Grows with the golfer's reach. */
     private var lookAhead = 55f
+    /** Aim-point distance down the hole (m), clamped to [MIN_AIM_DIST, MAX_AIM_DIST]. */
+    var aimDistance: Float
+        get() = lookAhead
+        set(v) { lookAhead = clamp(v, MIN_AIM_DIST, MAX_AIM_DIST); dirty = true }
+    /** Smoothed camera pitch offset -1..1 (+ = look further down the hole / tilt up). Eased toward [aimPitchTarget]. */
+    var aimPitch = 0f
+        private set
+    var aimPitchTarget = 0f
+        private set
+
+    /** Analog aim-point move: [amount] -1..1 (+ = further), [dt] seconds. Moves the aim marker and camera pitch. */
+    fun aimPoint(amount: Float, dt: Float) {
+        if (phase != Phase.AIMING || amount == 0f) return
+        aimDistance = lookAhead + amount * AIM_DIST_SPEED * dt
+        aimPitchTarget = clamp(aimPitchTarget + amount * AIM_PITCH_SPEED * dt, -1f, 1f)
+    }
 
     val par get() = hole.par
     val totalPar get() = course.sumOf { it.par }
@@ -206,6 +222,7 @@ class GameController(
 
     fun update(dt: Float) {
         phaseTime += dt
+        aimPitch += (aimPitchTarget - aimPitch) * (1f - Math.exp((-6f * dt).toDouble()).toFloat())
         if (swingClock >= 0f) swingClock += dt
 
         when (phase) {
@@ -417,7 +434,8 @@ class GameController(
             if (d == DiscModel.DART) continue
             reach = max(reach, Launcher.carry(profile, ThrowSpec(lie, 0f, d, ShotShape.FLAT, false, forehand), windEnv, 1f))
         }
-        lookAhead = clamp(reach * 0.8f, 55f, 120f)
+        lookAhead = clamp(reach * 0.8f, MIN_AIM_DIST, MAX_AIM_DIST)
+        aimPitchTarget = 0f
         val target = aimTarget()
         aimHeading = dirToHeading((target - lie).flat().normalized())
         shape = ShotShape.FLAT
@@ -534,6 +552,10 @@ class GameController(
 
     companion object {
         const val PUTT_RANGE = 20f
+        const val MIN_AIM_DIST = 55f
+        const val MAX_AIM_DIST = 120f
+        const val AIM_DIST_SPEED = 40f   // m/s at full deflection
+        const val AIM_PITCH_SPEED = 0.8f // pitch units/s at full deflection
         /** Inside this is circle 1: the short, high-percentage putt. */
         const val CIRCLE_1 = 10f
         private val CADDIE_SHAPES = listOf(ShotShape.FLAT, ShotShape.HYZER, ShotShape.ANHYZER)
