@@ -70,7 +70,7 @@ class GameActivity : Activity() {
 
         glView = GLSurfaceView(this).apply {
             setEGLContextClientVersion(3)
-            setEGLConfigChooser(8, 8, 8, 8, 24, 0)
+            setEGLConfigChooser(com.discgolf.game.gfx.MsaaConfigChooser())
             setRenderer(GameRenderer(this@GameActivity, ctl))
             renderMode = GLSurfaceView.RENDERMODE_WHEN_DIRTY
         }

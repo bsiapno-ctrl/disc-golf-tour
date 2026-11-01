@@ -4,6 +4,7 @@ import android.content.Context
 import android.opengl.Matrix
 import com.discgolf.game.core.Appearance
 import kotlin.math.hypot
+import kotlin.math.min
 import kotlin.math.sqrt
 
 /**
@@ -105,21 +106,29 @@ class SkinnedGolfer(private val context: Context) {
         var dx = handPos[0] - elbowPos[0]; var dy = handPos[1] - elbowPos[1]; var dz = handPos[2] - elbowPos[2]
         val dl = sqrt(dx * dx + dy * dy + dz * dz).coerceAtLeast(1e-4f)
         dx /= dl; dy /= dl; dz /= dl
-        // Disc sits just past the wrist, held level, facing along the forearm, then rolled by the release tilt.
-        val cx = handPos[0] + dx * 0.10f; val cy = handPos[1] + dy * 0.10f + 0.02f; val cz = handPos[2] + dz * 0.10f
-        var fx = dx; var fz = dz
-        val fl = hypot(fx, fz)
-        if (fl < 1e-3f) { fx = 0f; fz = 1f } else { fx /= fl; fz /= fl }
+        // Grip: the rim is pinched at the middle of the hand (thumb over it, fingers under) and the disc lies level,
+        // reaching away from the hand along the forearm line. Hanging straight down the arm has no horizontal
+        // direction, so it falls back to "forward and a little outward".
+        val hl = hypot(dx, dz)
+        val h = min(1f, hl * 3f)
+        var ex = (if (hl > 1e-4f) dx * 2f else 0f) - 0.9f
+        var ez = dz * 2f + 0.2f + 0.6f * (1f - h)
+        val el = hypot(ex, ez).coerceAtLeast(1e-4f); ex /= el; ez /= el
+        val off = DISC_RADIUS - 0.035f
+        val cx = handPos[0] + dx * 0.075f + ex * off; val cy = handPos[1] + dy * 0.075f; val cz = handPos[2] + dz * 0.075f + ez * off
         Matrix.setIdentityM(basis, 0)
-        basis[0] = fz; basis[1] = 0f; basis[2] = -fx
+        basis[0] = ez; basis[1] = 0f; basis[2] = -ex
         basis[4] = 0f; basis[5] = 1f; basis[6] = 0f
-        basis[8] = fx; basis[9] = 0f; basis[10] = fz
+        basis[8] = ex; basis[9] = 0f; basis[10] = ez
         basis[12] = cx; basis[13] = cy; basis[14] = cz
         // The model's left is +X, so a hyzer (throwing-side edge up) rolls the other way about the forward axis.
         Matrix.rotateM(basis, 0, -tiltDeg, 0f, 0f, 1f)
         Matrix.multiplyMM(discOut, 0, tmpWorld, 0, basis, 0)
         return true
     }
+
+    companion object { /** Radius of the held disc as drawn (a little bigger than life so it reads from the chase camera). */
+        const val DISC_RADIUS = 0.19f }
 
     fun release() { for (m in models.values) m?.release(); models.clear(); pa.clear(); pb.clear(); pc.clear() }
 }

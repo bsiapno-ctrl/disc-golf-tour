@@ -16,7 +16,7 @@ const hole = JSON.parse(fs.readFileSync(`hole${holeNum}.json`));
   const p = await b.newPage({ viewport: { width: W, height: HT } });
   await p.setContent(`<body style="margin:0"><canvas id=c width=${W} height=${HT}></canvas></body>`);
   p.on('console', m => console.log('page:', m.text()));
-  const err = await p.evaluate(async ({ sh, treeMeshes, hole, mode, assets, W, HT, charName, process_cam, FOV }) => {
+  const err = await p.evaluate(async ({ sh, treeMeshes, hole, mode, assets, W, HT, charName, process_cam, FOV, process_clip }) => {
     const gl = document.getElementById('c').getContext('webgl2', { antialias: true, preserveDrawingBuffer: true });
     const mat = {
       ident: () => [1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1],
@@ -168,7 +168,7 @@ const hole = JSON.parse(fs.readFileSync(`hole${holeNum}.json`));
         for (const c of clip.ch){ const ts=c.times; let i=0; while(i<ts.length-2&&tt>ts[i+1]) i++; const u=ts.length<2?0:Math.min(Math.max((tt-ts[i])/Math.max(ts[i+1]-ts[i],1e-5),0),1); const j=Math.min(i+1,ts.length-1), n=c.node;
           if (c.path==1){ let [a0,a1,a2,a3]=[0,1,2,3].map(k=>c.values[i*4+k]); let b=[0,1,2,3].map(k=>c.values[j*4+k]); let dot=a0*b[0]+a1*b[1]+a2*b[2]+a3*b[3]; const sg=dot<0?-1:1; dot*=sg; let ka,kb; if(dot>0.9995){ka=1-u;kb=u*sg;} else {const th=Math.acos(Math.min(dot,1)), sn=Math.sin(th); ka=Math.sin((1-u)*th)/sn; kb=Math.sin(u*th)/sn*sg;} const q=[a0*ka+b[0]*kb,a1*ka+b[1]*kb,a2*ka+b[2]*kb,a3*ka+b[3]*kb]; const l=1/Math.hypot(...q); for(let k=0;k<4;k++) o.r[n*4+k]=q[k]*l; }
           else { const arr=c.path==0?o.t:o.s; for(let k=0;k<3;k++) arr[n*3+k]=c.values[i*3+k]+(c.values[j*3+k]-c.values[i*3+k])*u; } } return o; };
-      const pose = sampleClip(clips['Windup_BH'], 0);
+      const pose = sampleClip(clips[process_clip[0]], +process_clip[1]*clips[process_clip[0]].duration);
       const loc = (n)=>{ const x=pose.r[n*4],y=pose.r[n*4+1],z=pose.r[n*4+2],w=pose.r[n*4+3]; const sx=pose.s[n*3],sy=pose.s[n*3+1],sz=pose.s[n*3+2];
         return [(1-2*(y*y+z*z))*sx,2*(x*y+z*w)*sx,2*(x*z-y*w)*sx,0, 2*(x*y-z*w)*sy,(1-2*(x*x+z*z))*sy,2*(y*z+x*w)*sy,0, 2*(x*z+y*w)*sz,2*(y*z-x*w)*sz,(1-2*(x*x+y*y))*sz,0, pose.t[n*3],pose.t[n*3+1],pose.t[n*3+2],1]; };
       const glob = new Array(N); const solve = (n)=>{ if(glob[n]) return glob[n]; const l=loc(n); return glob[n] = parent[n]>=0 ? mat.mul(solve(parent[n]), l) : l; }; for (let i=0;i<N;i++) solve(i);
@@ -184,15 +184,25 @@ const hole = JSON.parse(fs.readFileSync(`hole${holeNum}.json`));
       const world = mat.mul(mat.trs(hole.tee[0],hole.tee[1],hole.tee[2],1,1,1), mat.mul(rotY(hd), mat.trs(0,0,0,-bw,1,bw)));
       gl.uniformMatrix4fv(U(sknp,'uMVP'),false,mat.mul(vp,world)); gl.uniformMatrix4fv(U(sknp,'uModel'),false,world);
       const parts=[]; for (const mesh of J.meshes) for (const p of mesh.primitives) { const at=p.attributes; const pos=readAcc(J,bin,at.POSITION), nor0=readAcc(J,bin,at.NORMAL), jn=readAcc(J,bin,at.JOINTS_0), wt=readAcc(J,bin,at.WEIGHTS_0); const idx=Uint16Array.from(readAcc(J,bin,p.indices)); const n=pos.length/3;
-        const nor=new Float32Array(n*3); { const M=new Map(); const ky=i=>[0,1,2].map(k=>Math.round(pos[i*3+k]*400)).join(','); for(let i=0;i<n;i++){ const k=ky(i); let a=M.get(k); if(!a){a=[0,0,0];M.set(k,a);} for(let c=0;c<3;c++) a[c]+=nor0[i*3+c]; } for(let i=0;i<n;i++){ const a=M.get(ky(i)); const l=1/Math.max(Math.hypot(a[0],a[1],a[2]),1e-4); for(let c=0;c<3;c++) nor[i*3+c]=nor0[i*3+c]*0.15+a[c]*l*0.85; } }
-        const vb=new Float32Array(n*14); for(let i=0;i<n;i++){ vb.set(pos.subarray(i*3,i*3+3),i*14); vb.set(nor.subarray(i*3,i*3+3),i*14+3); vb.set(jn.subarray(i*4,i*4+4),i*14+6); vb.set(wt.subarray(i*4,i*4+4),i*14+10); }
-        const vao=gl.createVertexArray(); gl.bindVertexArray(vao); const b1=gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER,b1); gl.bufferData(gl.ARRAY_BUFFER,vb,gl.STATIC_DRAW); const b2=gl.createBuffer(); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,b2); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER,idx,gl.STATIC_DRAW);
+        const nor=new Float32Array(n*3); { const M=new Map(); const ky=i=>[0,1,2].map(k=>Math.round(pos[i*3+k]*400)).join(','); for(let i=0;i<n;i++){ const k=ky(i); let a=M.get(k); if(!a){a=[0,0,0];M.set(k,a);} for(let c=0;c<3;c++) a[c]+=nor0[i*3+c]; } for(let i=0;i<n;i++){ const a=M.get(ky(i)); const l=1/Math.max(Math.hypot(a[0],a[1],a[2]),1e-4); for(let c=0;c<3;c++) nor[i*3+c]=nor0[i*3+c]*0.04+a[c]*l*0.96; } }
+        let P_=Array.from(pos), N_=Array.from(nor), J_=Array.from(jn), W_=Array.from(wt), I_=[]; { const E=new Map(); const alpha=0.7;
+          const mid=(a,b)=>{ const lo=Math.min(a,b), hi=Math.max(a,b), key=lo*1000003+hi; if(E.has(key)) return E.get(key); const m=[0,1,2].map(k=>(pos[lo*3+k]+pos[hi*3+k])*0.5); let ax=0,ay=0,az=0;
+            for (const q of [lo,hi]) { const d=(m[0]-pos[q*3])*nor[q*3]+(m[1]-pos[q*3+1])*nor[q*3+1]+(m[2]-pos[q*3+2])*nor[q*3+2]; ax+=(m[0]-d*nor[q*3])*0.5; ay+=(m[1]-d*nor[q*3+1])*0.5; az+=(m[2]-d*nor[q*3+2])*0.5; }
+            P_.push(m[0]+(ax-m[0])*alpha, m[1]+(ay-m[1])*alpha, m[2]+(az-m[2])*alpha);
+            let x=nor[lo*3]+nor[hi*3], y=nor[lo*3+1]+nor[hi*3+1], z=nor[lo*3+2]+nor[hi*3+2]; const l=1/Math.max(Math.hypot(x,y,z),1e-4); N_.push(x*l,y*l,z*l);
+            const mg=new Map(); for (const q of [lo,hi]) for (let k=0;k<4;k++){ const w=wt[q*4+k]*0.5; if(w<=0) continue; const j=jn[q*4+k]; mg.set(j,(mg.get(j)||0)+w); }
+            const top=[...mg.entries()].sort((a,b)=>b[1]-a[1]).slice(0,4); const tot=Math.max(top.reduce((a,b)=>a+b[1],0),1e-6); for(let k=0;k<4;k++){ if(k<top.length){J_.push(top[k][0]); W_.push(top[k][1]/tot);} else {J_.push(0); W_.push(0);} }
+            const id=P_.length/3-1; E.set(key,id); return id; };
+          for (let t=0;t<idx.length;t+=3){ const a=idx[t],b=idx[t+1],c=idx[t+2]; const ab=mid(a,b), bc=mid(b,c), ca=mid(c,a); I_.push(a,ab,ca, ab,b,bc, ca,bc,c, ab,bc,ca); } }
+        const nV=P_.length/3; const vb=new Float32Array(nV*14); for(let i=0;i<nV;i++){ vb.set(P_.slice(i*3,i*3+3),i*14); vb.set(N_.slice(i*3,i*3+3),i*14+3); vb.set(J_.slice(i*4,i*4+4),i*14+6); vb.set(W_.slice(i*4,i*4+4),i*14+10); }
+        const idx2=Uint16Array.from(I_); {}
+        const vao=gl.createVertexArray(); gl.bindVertexArray(vao); const b1=gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER,b1); gl.bufferData(gl.ARRAY_BUFFER,vb,gl.STATIC_DRAW); const b2=gl.createBuffer(); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,b2); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER,idx2,gl.STATIC_DRAW);
         gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0,3,gl.FLOAT,false,56,0); gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1,3,gl.FLOAT,false,56,12); gl.enableVertexAttribArray(2); gl.vertexAttribPointer(2,4,gl.FLOAT,false,56,24); gl.enableVertexAttribArray(3); gl.vertexAttribPointer(3,4,gl.FLOAT,false,56,40);
         const mt=J.materials[p.material]; const bc=(mt.pbrMetallicRoughness||{}).baseColorFactor||[.8,.8,.8]; let col=[0,1,2].map(k=>Math.pow(Math.min(Math.max(bc[k],0),1),1/2.2)); const nm=mt.name||'';
         if (nm=='Skin') col=skinC; else if (nm=='Skin_Darker') col=skinD; else if (nm=='Eyebrows') col=brow; else if (roles[2].includes(nm)) col=hairC; else if (roles[0].includes(nm)) col=shirtC; else if (roles[1].includes(nm)) col=shortsC;
-        const kind = nm.startsWith('Skin')?2:(nm=='Hair'||nm=='Eyebrows')?3:nm=='Eye'?4:(roles[0].includes(nm)||roles[1].includes(nm)||roles[2].includes(nm))?1:0; parts.push({vao,n:idx.length,col,kind}); }
-      gl.enable(gl.CULL_FACE); gl.cullFace(gl.FRONT); gl.uniform1f(U(sknp,'uOutline'),0.020); for (const q of parts){ gl.bindVertexArray(q.vao); gl.drawElements(gl.TRIANGLES,q.n,gl.UNSIGNED_SHORT,0);} gl.disable(gl.CULL_FACE); gl.uniform1f(U(sknp,'uOutline'),0);
-      for (const q of parts){ gl.uniform1f(U(sknp,'uKind'),q.kind); gl.uniform3f(U(sknp,'uColor'),...q.col); gl.bindVertexArray(q.vao); gl.drawElements(gl.TRIANGLES,q.n,gl.UNSIGNED_SHORT,0);}
+        const kind = nm.startsWith('Skin')?2:(nm=='Hair'||nm=='Eyebrows')?3:nm=='Eye'?4:(roles[0].includes(nm)||roles[1].includes(nm)||roles[2].includes(nm))?1:0; parts.push({vao,n:idx2.length,col,kind,nm}); }
+      gl.uniform2f(U(sknp,'uViewport'),W,HT); gl.enable(gl.CULL_FACE); gl.cullFace(gl.FRONT); gl.frontFace(gl.CCW); gl.uniform1f(U(sknp,'uOutline'),Math.min(Math.max(HT*0.0033,1.5),4)); for (const q of parts){ if(q.nm=='Eye') continue; gl.bindVertexArray(q.vao); gl.drawElements(gl.TRIANGLES,q.n,gl.UNSIGNED_SHORT,0);} gl.disable(gl.CULL_FACE); gl.uniform1f(U(sknp,'uOutline'),0);
+      for (const q of parts){ if(q.nm=='Eye') continue; gl.uniform1f(U(sknp,'uKind'),q.kind); gl.uniform3f(U(sknp,'uColor'),...q.col); gl.bindVertexArray(q.vao); gl.drawElements(gl.TRIANGLES,q.n,gl.UNSIGNED_SHORT,0);}
 
       // ---- held disc (same maths as SkinnedGolfer + GameRenderer): puck lathe mesh, in the right hand
       { const prof=[[0,.26],[.22,.27],[.45,.285],[.68,.30],[.84,.305],[.93,.29],[.985,.24],[1,.17],[.99,.10],[.955,.055],[.90,.045],[.84,.075],[.62,.11],[.30,.14],[0,.15]]; const n=prof.length, seg=56; const nr=[],ny=[];
@@ -202,11 +212,16 @@ const hole = JSON.parse(fs.readFileSync(`hole${holeNum}.json`));
         const puck=mkMesh(V,I);
         const wi=nodes.findIndex(x=>x.name=='Wrist.R'), fi=nodes.findIndex(x=>x.name=='LowerArm.R');
         const wp=[glob[wi][12],glob[wi][13],glob[wi][14]], ep=[glob[fi][12],glob[fi][13],glob[fi][14]]; let dx=wp[0]-ep[0],dy=wp[1]-ep[1],dz=wp[2]-ep[2]; const dl=Math.hypot(dx,dy,dz); dx/=dl;dy/=dl;dz/=dl;
-        const cx=wp[0]+dx*0.10, cy=wp[1]+dy*0.10+0.02, cz=wp[2]+dz*0.10; let fx=dx,fz=dz; const fl=Math.hypot(fx,fz); if(fl<1e-3){fx=0;fz=1;}else{fx/=fl;fz/=fl;}
-        const basis=[fz,0,-fx,0, 0,1,0,0, fx,0,fz,0, cx,cy,cz,1];
-        const M=mat.mul(world, mat.mul(basis, mat.trs(0,0,0,0.105,0.105,0.105)));
+        // grip: rim between thumb and fingers, disc extends along the forearm line (horizontal), thumb side up
+        const hl=Math.hypot(dx,dz); const h=Math.min(1,hl*3); let ex=dx*2*(hl>1e-4?1:0)-0.9, ez=dz*2+0.2+0.6*(1-h); const el=Math.hypot(ex,ez); ex/=el; ez/=el;
+        const R=0.19, hc=[wp[0]+dx*0.075,wp[1]+dy*0.075,wp[2]+dz*0.075];
+        const off=R-0.035; const cx=hc[0]+ex*off, cy=hc[1]+0.0, cz=hc[2]+ez*off;
+        const basis=[ez,0,-ex,0, 0,1,0,0, ex,0,ez,0, cx,cy,cz,1];
+        const M=mat.mul(world, mat.mul(basis, mat.trs(0,0,0,0.19,0.19,0.19)));
         gl.useProgram(main); gl.uniform3f(U(main,'uLightDir'),...sun); gl.uniform3f(U(main,'uCamPos'),...eye); gl.uniform3f(U(main,'uFogColor'),0.80,0.89,0.95); gl.uniform1f(U(main,'uStripe'),0); gl.uniform1f(U(main,'uEmissive'),0);
         gl.uniformMatrix4fv(U(main,'uMVP'),false,mat.mul(vp,M)); gl.uniformMatrix4fv(U(main,'uModel'),false,M); gl.uniform4f(U(main,'uColor'),0.18,0.53,0.87,1); gl.bindVertexArray(puck.vao); gl.drawElements(gl.TRIANGLES,puck.n,gl.UNSIGNED_INT,0);
+        { const M2=mat.mul(world, mat.mul(basis, mat.trs(0,0,0,0.19*1.07,0.19*0.45,0.19*1.07))); gl.uniformMatrix4fv(U(main,'uMVP'),false,mat.mul(vp,M2)); gl.uniformMatrix4fv(U(main,'uModel'),false,M2); gl.uniform4f(U(main,'uColor'),1.0,0.957,0.88,1); gl.uniform1f(U(main,'uEmissive'),0.35); gl.drawElements(gl.TRIANGLES,puck.n,gl.UNSIGNED_INT,0); gl.uniform1f(U(main,'uEmissive'),0); }
+        { const nid=n=>nodes.findIndex(x=>x.name==n); const P=n=>{const g=glob[nid(n)];return [g[12],g[13],g[14]]}; const sub=(a,b)=>a.map((v,i)=>+(v-b[i]).toFixed(3)); console.log('AX', process_clip.join(), 'dir',[dx,dy,dz].map(v=>+v.toFixed(2)), 'thumb',sub(P('Thumb1.R'),wp), 'index',sub(P('Index1.R'),wp), 'pinky',sub(P('Pinky1.R'),wp), 'xaxis', [glob[wi][0],glob[wi][1],glob[wi][2]].map(v=>+v.toFixed(2)), 'zaxis',[glob[wi][8],glob[wi][9],glob[wi][10]].map(v=>+v.toFixed(2))); }
         console.log('hand', wp, 'disc', cx, cy, cz); }
     }
 
@@ -218,7 +233,7 @@ const hole = JSON.parse(fs.readFileSync(`hole${holeNum}.json`));
     for (const [cx,cz,rx,rz,lv] of hole.ponds) { drawM(disc, mat.trs(cx,lv+0.03,cz,rx*1.02,1,rz*1.02),0.10,0.40,0.62,0.55); drawM(disc, mat.trs(cx,lv+0.04,cz,rx*0.97,1,rz*0.97),0.12,0.46,0.70,0.78); drawM(disc, mat.trs(cx,lv+0.05,cz,rx*0.70,1,rz*0.70),0.20,0.56,0.80,0.40); }
     { const t=hole.tee, hd2=0; const g=(r,a,c)=>drawM(disc, mat.trs(t[0],t[1]+0.05,t[2],r,1,r),c[0],c[1],c[2],a); for(let i=0;i<12;i++){ g(1.2-i*0.065,0.042,[0,.06,.02]); } }
     return gl.getError();
-  }, { sh: shaders, treeMeshes, hole, mode, assets, W, HT, charName, process_cam: (process.env.CAM||'3.6,0.7,1.5,14,0.9').split(',').map(Number), FOV: +(process.env.FOV||50) });
+  }, { sh: shaders, treeMeshes, hole, mode, assets, W, HT, charName, process_cam: (process.env.CAM||'3.6,0.7,1.5,14,0.9').split(',').map(Number), FOV: +(process.env.FOV||50), process_clip: (process.env.CLIP||'Windup_BH,0').split(',') });
   console.log('gl error', err);
   await p.screenshot({ path: outFile });
   await b.close();

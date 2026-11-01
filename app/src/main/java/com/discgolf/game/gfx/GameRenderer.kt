@@ -522,9 +522,9 @@ class GameRenderer(private val context: android.content.Context, private val ctl
             val c = ctl.disc.colorRgb
             lastHand[0] = handDisc[12]; lastHand[1] = handDisc[13]; lastHand[2] = handDisc[14]
             // Bigger than a real disc and ringed with a bright rim so it still reads from the behind camera.
-            ms.load(handDisc).scale(0.17f, 0.17f, 0.17f)
-            drawRgb(meshes.puck, ms.top, c, 1.08f, 1f, 0.12f)
-            ms.load(handDisc).scale(0.182f, 0.0765f, 0.182f)
+            ms.load(handDisc).scale(SkinnedGolfer.DISC_RADIUS, SkinnedGolfer.DISC_RADIUS, SkinnedGolfer.DISC_RADIUS)
+            drawRgb(meshes.puck, ms.top, c, 1.12f, 1f, 0.14f)
+            ms.load(handDisc).scale(SkinnedGolfer.DISC_RADIUS * 1.07f, SkinnedGolfer.DISC_RADIUS * 0.45f, SkinnedGolfer.DISC_RADIUS * 1.07f)
             drawRgb(meshes.puck, ms.top, 0xFFF4E0, 1.1f, 1f, 0.35f)
         }
         return true
