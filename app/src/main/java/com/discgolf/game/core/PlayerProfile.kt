@@ -83,7 +83,7 @@ class PlayerProfile(var name: String = "Rookie") {
     fun pct(s: Stat) = (stats[s.ordinal] - 1) / 98f
 
     /** Top release speed in m/s the arm can produce. Ratings 1..99 map to roughly 15..30 m/s. */
-    fun armSpeed() = 15f + 15f * pct(Stat.POWER)
+    fun armSpeed() = 18f + 28f * pct(Stat.POWER)
 
     fun xpForNextLevel() = 120 + 80 * (level - 1)
     fun statXpNeeded(value: Int) = 18f + value * 1.1f

@@ -221,8 +221,8 @@ class CoreTest {
     }
 
     @Test fun aRollingDiscDriftsDownASideSlope() {
-        val flat = landOn(FlatTerrain, DiscModel.ANVIL, ShotShape.ANHYZER).x
-        val slope = landOn(slopeTerrain(-0.12f, 0f), DiscModel.ANVIL, ShotShape.ANHYZER).x   // ground falls toward +x
+        val flat = landOn(FlatTerrain, DiscModel.ANVIL, ShotShape.ROLLER).x
+        val slope = landOn(slopeTerrain(-0.12f, 0f), DiscModel.ANVIL, ShotShape.ROLLER).x   // ground falls toward +x
         assertTrue("slope $slope vs flat $flat", slope > flat + 1f)
     }
 

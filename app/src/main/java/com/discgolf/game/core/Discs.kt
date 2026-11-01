@@ -21,7 +21,7 @@ enum class DiscModel(
 ) {
     DART("Dart", "Putter", 2, 3, 0f, 1f, 1, 0xE8453C),
     ANVIL("Anvil", "Midrange", 5, 5, -1f, 1f, 1, 0x2E86DE),
-    DRIFTER("Drifter", "Midrange", 4, 5, -3f, 0f, 3, 0x27AE60),
+    DRIFTER("Drifter", "Midrange", 4, 5, -2f, 1f, 3, 0x27AE60),
     FALCON("Falcon", "Fairway", 9, 5, -1f, 2f, 2, 0xF1C40F),
     ARROW("Arrow", "Fairway", 7, 5, -2f, 1f, 4, 0x9B59B6),
     HAMMER("Hammer", "Distance", 12, 5, -1f, 3f, 5, 0xE67E22),
@@ -29,7 +29,7 @@ enum class DiscModel(
     WRAITH("Wraith", "Distance", 13, 6, -2f, 3f, 9, 0x34495E);
 
     /** Ideal release speed in m/s. Throw slower than this and the disc fades early; throw faster and it turns over. */
-    val idealSpeed: Float get() = 9f + speed * 1.55f
+    val idealSpeed: Float get() = 10f + speed * 1.7f
 
     /** The hardest this disc can be thrown at all (arm speed cap). */
     val speedLimit: Float get() = 20f + speed * 0.95f
