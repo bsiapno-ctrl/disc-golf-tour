@@ -38,4 +38,20 @@ glossy chunky UI, a physically believable disc flight, a pro-style backhand/fore
 | Date | Round | Notes |
 |------|-------|-------|
 | 2026-10-31 | 4 | New HUD, aim stick, puffy trees, menus restyled, flight tuned, fixed debug key |
-| 2026-10-31 | 5 | (in progress) 8-way stick, MSAA + outline + disc grip, textured trees/world, Hot Shots HUD |
+| 2026-10-31 | 5 | Done + verified in BlueStacks: 8-way stick, 4x MSAA + thin outline + disc at the hand, tiered textured trees, sky/clouds/water, flag-banner HUD, portrait fixed. Next: more Hot Shots polish (see below) |
+
+## Lessons (read before looping)
+- Computer-use approval to BlueStacks/File Explorer expires after 30 minutes of inactivity; the user must re-approve
+  (computer_request_access). Batch test work so each install+play cycle stays inside one approval window.
+- In File Explorer (click tier) double-click works on an .apk. Always zoom the file list and compute the row y carefully;
+  the r4/r5/r6 rows are 12 px apart - clicking the wrong row installs an older build. Verify the build by a visible change.
+- BlueStacks home folder icons sometimes stop responding after an uninstall; launching the game icon still works.
+  With the fixed debug key no uninstall is needed any more.
+- Screenshots take ~0.5 s: the 0.7 s swing cannot be caught in-game. Use the Blender sheets, or add a slow-motion option.
+
+## Next ideas (not done)
+- Slow-motion toggle for verifying the swing in the emulator.
+- Circular Hot Shots style swing gauge (kept horizontal meter so far).
+- Higher-poly characters re-exported from Blender (currently subdivided at load).
+- Idle breathing clip exists in assets but is not wired in the game.
+- Drifter/Comet curve weak; check par vs new longer throws.
