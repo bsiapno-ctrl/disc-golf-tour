@@ -195,9 +195,9 @@ class HoleEnvironment(
             }
             val speed = flight.vel.length()
             // Slow discs drop into the chains; hard ones blow through or kick out. Putting skill helps.
-            var chance = 0.86f - 0.05f * max(0f, speed - 3.5f)
+            var chance = 0.92f - 0.012f * max(0f, speed - 5f)
             if (py > 1.2f) chance *= 0.9f
-            chance += 0.14f * putting01
+            chance += 0.08f * putting01
             chance = clamp(chance, 0.03f, 0.97f)
             if (rng.nextFloat() < chance) {
                 flight.holed = true

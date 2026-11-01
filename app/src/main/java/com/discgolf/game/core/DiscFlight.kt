@@ -62,6 +62,7 @@ class DiscFlight(
     private val start = pos
 
     private var heading = dirToHeading(vel)
+    private var launchSpeed = -1f
     private var rollSpeed = 0f
     private var rollDrift = 0f
     private var rollDecel = 4f
@@ -117,8 +118,15 @@ class DiscFlight(
         val s = speed / disc.idealSpeed
         val turnMag = -disc.turn
         val high = smoothstep(0.80f, 1.15f, s) + max(0f, s - 1.15f) * 1.4f
-        val low = 1f - smoothstep(Tuning.lowLo, Tuning.lowHi, s)
-        val rate = (-turnMag * high * Tuning.kTurn + disc.fade * (low + Tuning.fadeBase) * Tuning.kFade) * (1.15f - 0.30f * spin01)
+        if (launchSpeed < 0f) launchSpeed = speed
+        // Fade comes on when the disc is slow for its type, or simply after it has shed a good share of its launch speed.
+        val u = speed / launchSpeed
+        val low = max(1f - smoothstep(Tuning.lowLo, Tuning.lowHi, s), 1f - smoothstep(Tuning.clockLo, Tuning.clockHi, u))
+        // Fade is a pull back toward a hyzer-ish resting bank that grows with the disc's fade rating and
+        // strengthens as the disc slows; turn is a push toward anhyzer while it is fast. Spin steadies both.
+        val steady = 1.15f - 0.30f * spin01
+        val fadeBank = Tuning.kFade * (disc.fade + Tuning.fadeFloor)
+        val rate = (-turnMag * high * Tuning.kTurn + (fadeBank - bank) * (low + Tuning.fadeBase) * Tuning.kRestore) * steady
         bank = (bank + rate * dt).coerceIn(Tuning.bankMin, Tuning.bankMax)
 
         // The nose pitches down with the flight path, so a slowing disc settles into a glide instead of stalling.
@@ -145,11 +153,11 @@ class DiscFlight(
         val tilt = bank * hand
         // Anhyzer discs hit the ground on edge and roll; hyzers skid and stop.
         val roller = tilt < -0.18f || rollerThrow
-        var keep = if (rollerThrow) 0.88f else if (roller) 0.62f else if (abs(tilt) < 0.18f) 0.30f else 0.16f
-        keep *= if (rollerThrow) (1.15f - descent * 0.5f).coerceIn(0.6f, 1f) else (1.1f - descent).coerceIn(0.25f, 1f)
+        var keep = if (rollerThrow) 0.8f else if (roller) 0.75f else if (abs(tilt) < 0.18f) 0.55f else 0.42f
+        keep *= if (rollerThrow) (1.15f - descent * 0.5f).coerceIn(0.6f, 1f) else (1.15f - 0.5f * descent).coerceIn(0.4f, 1f)
         rollSpeed = h * keep
-        rollDecel = if (roller) 2.2f else 4.0f
-        rollDrift = -hand * bank * (if (rollerThrow) 0.3f else 0.9f)
+        rollDecel = if (rollerThrow) 2.4f else if (roller) 2.2f else 3.0f
+        rollDrift = -hand * bank * (if (rollerThrow) 0.12f else 0.9f)
         state = FlightState.ROLLING
         vel = headingToDir(heading) * rollSpeed
         env.resolve(this)
@@ -202,27 +210,32 @@ class DiscFlight(
 
 /** Flight-model constants. Kept in one place so they can be tuned against the carry-distance tests. */
 object Tuning {
-    var cl0Base = 0.08f
-    var cl0PerGlide = 0.024f
+    var cl0Base = 0.0158f
+    var cl0PerGlide = 0.0095f
     var clAlpha = 2.2f
-    var cd0 = 0.054f
+    var cd0 = 0.0227f
     var cdQuad = 2.5f
-    var kTurn = 0.13f
-    var kFade = 0.045f
-    var fadeBase = 0.10f
-    var lowLo = 0.55f
-    var lowHi = 0.95f
-    var driveElevDeg = 9f
-    var puttElevDeg = 3f
+    var kTurn = 0.070f
+    var kFade = 0.161f
+    var fadeBase = 0f
+    var fadeFloor = 4.0f
+    var clockLo = 0.40f
+    var clockHi = 0.65f
+    /** How quickly the bank relaxes to the fade bank, per second at low speed. */
+    var kRestore = 2.72f
+    var lowLo = 0.13f
+    var lowHi = 0.38f
+    var driveElevDeg = 6f
+    var puttElevDeg = 4f
     var noseOverElevDeg = -2.5f
-    var bankMin = -1.0f
-    var bankMax = 0.85f
+    var bankMin = -0.50f
+    var bankMax = 0.61f
     var stallAlpha = 0.35f
     /** How much of the bank angle turns into sideways lift. Real discs shed bank quickly; this keeps curves readable. */
-    var bankGain = 0.55f
+    var bankGain = 0.48f
     /** Pitch relaxation toward the flight path (1/s) and the resting angle of attack offset (rad). */
-    var noseFollow = 0.6f
-    var noseTrim = 0.10f
+    var noseFollow = 0.10f
+    var noseTrim = 0.20f
 }
 
 /** Open field: no wind, no trees. Used by the carry-distance helpers and tests. */
@@ -248,7 +261,7 @@ class ThrowSpec(
 )
 
 object Launcher {
-    const val PUTT_MAX_SPEED = 17f
+    const val PUTT_MAX_SPEED = 20f
     const val PUTT_MIN_SPEED = 3f
     const val DRIVE_MIN_SPEED = 4f
     /** A sidearm throw is a little slower than a backhand for most players. */
