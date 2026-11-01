@@ -67,16 +67,28 @@ void main() {
 
     vec3 sun = normalize(uSunDir);
     float s = max(dot(ray, sun), 0.0);
-    col += vec3(1.0, 0.92, 0.75) * (pow(s, 600.0) * 1.2 + pow(s, 24.0) * 0.22 + pow(s, 5.0) * 0.14);   // sun and soft bloom
+    col += vec3(1.0, 0.92, 0.75) * (pow(s, 900.0) * 1.4 + pow(s, 40.0) * 0.26 + pow(s, 7.0) * 0.16 + pow(s, 2.0) * 0.05);   // sun and soft bloom
     col += vec3(1.0, 0.95, 0.85) * 0.16 * (1.0 - smoothstep(0.0, 0.20, up));   // glowing horizon
 
-    // Clouds: a flat layer high above, projected from the view ray.
-    if (ray.y > 0.02) {
-        vec2 cp = ray.xz / (ray.y + 0.12) * 0.9 + vec2(uTime * 0.012, 0.0);
-        float c = fbm(cp * 1.4);
-        float cloud = smoothstep(0.38, 0.62, c) * smoothstep(0.02, 0.28, ray.y);
-        vec3 cloudCol = mix(vec3(0.70, 0.80, 0.96), vec3(1.0, 0.99, 0.96), smoothstep(0.50, 0.80, c));
-        col = mix(col, cloudCol, cloud * 0.92);
+    // Clouds, two stylised layers of fluffy cumulus: a high thin one and a nearer, puffier one. Each is a noise
+    // density with a sharpened edge, lit from the sun side with a soft blue-grey underside and bright rim.
+    if (ray.y > 0.015) {
+        vec2 sd = normalize(sun.xz + vec2(0.001));
+        for (int L = 0; L < 2; L++) {
+            float fl = float(L);
+            float hgt = 0.10 + 0.22 * fl;                    // layer 0 low and puffy, layer 1 high and wispy
+            vec2 cp = ray.xz / (ray.y + hgt) * (0.85 + 0.5 * fl) + vec2(uTime * (0.010 + 0.006 * fl) + 3.0 * fl, 7.0 * fl);
+            float sc = 0.80 + 1.0 * fl;
+            float d = fbm(cp * sc);
+            float d2 = fbm((cp + sd * 0.045) * sc);          // density a little toward the sun: less than d means the sun side is thin = lit edge
+            float cover = 0.47 + 0.08 * fl;
+            float cl = smoothstep(cover, cover + 0.13, d) * smoothstep(0.015, 0.20 + 0.10 * fl, ray.y);
+            float lit = clamp(0.70 + (d - d2) * 6.0 + (d - cover) * 1.5, 0.0, 1.0);
+            vec3 shade = vec3(0.72, 0.81, 0.96);
+            vec3 cc = mix(shade, vec3(1.0, 1.0, 0.99), smoothstep(0.30, 0.80, lit));
+            cc += vec3(1.0, 0.92, 0.75) * 0.12 * pow(s, 6.0) * (1.0 - smoothstep(0.0, 0.5, lit));   // silver lining near the sun
+            col = mix(col, cc, cl * (L == 0 ? 0.97 : 0.60));
+        }
     }
     // Distant hills and a tree line, three layers fading into the haze. Only drawn just above the horizon.
     if (ray.y < 0.30) {

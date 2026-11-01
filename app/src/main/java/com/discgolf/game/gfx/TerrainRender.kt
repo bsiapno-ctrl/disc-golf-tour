@@ -43,7 +43,16 @@ class TerrainRender(val hole: Hole) {
         val up = Vec3(0f, 1f, 0f)
         for (iz in 0 until nz) for (ix in 0 until nx) {
             val x = wx0 + ix * cell; val z = wz0 + iz * cell
-            vtx(x, t.heightAt(x, z), z, t.normalAt(x, z))
+            var y = t.heightAt(x, z)
+            // Sink pond beds under the water plane so the shore line, foam and ripples show instead of mud flats.
+            for (p in hole.ponds) {
+                val qx = (x - p.cx) / p.rx; val qz = (z - p.cz) / p.rz
+                val q = kotlin.math.sqrt(qx * qx + qz * qz)
+                val u = ((q - 0.80f) / 0.50f).coerceIn(0f, 1f)
+                val keep = u * u * (3f - 2f * u)          // 0 = full pond bed, 1 = untouched ground
+                y = y * keep + min(y, p.level - 0.16f) * (1f - keep)
+            }
+            vtx(x, y, z, t.normalAt(x, z))
         }
         val idx = ArrayList<Short>((nx * nz + 2 * (nx + nz)) * 6)
         for (iz in 0 until nz - 1) for (ix in 0 until nx - 1) {
@@ -137,6 +146,7 @@ class TerrainShader {
     private val uLight = GLES30.glGetUniformLocation(prog, "uLightDir")
     private val uCam = GLES30.glGetUniformLocation(prog, "uCamPos")
     private val uBasket = GLES30.glGetUniformLocation(prog, "uBasket")
+    private val uTee = GLES30.glGetUniformLocation(prog, "uTee")
 
     fun draw(t: TerrainRender, vp: FloatArray, cam: Vec3, light: FloatArray) {
         GLES30.glUseProgram(prog)
@@ -145,6 +155,8 @@ class TerrainShader {
         GLES30.glUniform3f(uCam, cam.x, cam.y, cam.z)
         val b = t.hole.basket
         GLES30.glUniform3f(uBasket, b.x, b.y, b.z)
+        val tee = t.hole.tee
+        GLES30.glUniform3f(uTee, tee.x, tee.y, tee.z)
         t.bindAndDraw(uRect, uTex)
     }
 
@@ -171,6 +183,7 @@ uniform vec4 uSurfRect;
 uniform vec3 uLightDir;
 uniform vec3 uCamPos;
 uniform vec3 uBasket;
+uniform vec3 uTee;
 out vec4 fragColor;
 
 float hash(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
@@ -202,7 +215,7 @@ void main() {
     // Fine grain fades with distance so far ground does not shimmer.
     float fine = mix(vnoise(vWorld.xz * 3.5), 0.5, smoothstep(25.0, 90.0, dist));
 
-    vec3 rough = mix(vec3(0.18, 0.43, 0.12), vec3(0.32, 0.58, 0.16), broad);
+    vec3 rough = mix(vec3(0.13, 0.38, 0.10), vec3(0.28, 0.56, 0.14), broad);
     rough = mix(rough, vec3(0.38, 0.40, 0.17), smoothstep(0.58, 0.82, mid) * 0.55);   // dry, yellowed patches
     // Close up: individual blades (stretched noise at two scales) and speckle, fading before they would shimmer.
     float near = 1.0 - smoothstep(6.0, 55.0, dist);
@@ -215,8 +228,8 @@ void main() {
 
     vec3 fairway = mix(vec3(0.46, 0.82, 0.22), vec3(0.58, 0.89, 0.29), broad);
     // Mowing stripes, fading out in the distance where they would alias.
-    float stripe = smoothstep(0.35, 0.65, fract(vWorld.z / 9.0));
-    fairway *= 1.0 - 0.20 * stripe * (1.0 - smoothstep(60.0, 160.0, dist));
+    float stripe = smoothstep(0.42, 0.58, fract(vWorld.z / 9.0));
+    fairway *= 1.0 - 0.24 * stripe * (1.0 - smoothstep(60.0, 160.0, dist));
     fairway *= 0.94 + 0.12 * fine;
     fairway *= 0.92 + 0.16 * smoothstep(0.30, 0.75, mid);                  // worn and lush patches
     fairway = mix(fairway, fairway * vec3(0.90, 0.94, 0.82), smoothstep(0.55, 0.9, fbm(vWorld.xz * 0.12 + 5.0)) * 0.6);
@@ -246,6 +259,41 @@ void main() {
     float rip = 0.5 + 0.5 * sin(vWorld.x * 2.2 + vWorld.z * 1.3 + vnoise(vWorld.xz * 0.8) * 5.0);
     vec3 sandCol = mix(vec3(0.89, 0.80, 0.55), vec3(0.80, 0.70, 0.45), rip * 0.35 + (vnoise(vWorld.xz * 30.0) - 0.5) * 0.25 * (1.0 - smoothstep(10.0, 50.0, dist)));
     col = mix(col, sandCol, sand);
+
+    // Grass tufts: soft dark-cored clumps with lighter blade tips, scattered on a jittered grid; only in the rough, and only near.
+    float tuftFade = 1.0 - smoothstep(30.0, 85.0, dist);
+    float inRough = (1.0 - fair) * (1.0 - green) * (1.0 - sand) * (1.0 - water);
+    if (tuftFade > 0.0 && inRough > 0.0) {
+        vec2 tp = vWorld.xz * 0.95;
+        vec2 tc = floor(tp), tf = fract(tp) - 0.5;
+        vec2 jit = vec2(hash(tc + 2.0), hash(tc + 9.0)) - 0.5;
+        vec2 td = tf - jit * 0.5;
+        float tr = length(td);
+        float tang = atan(td.y, td.x);
+        float shape = 0.5 + 0.5 * sin(tang * 7.0 + hash(tc) * 6.28);
+        float tuft = (1.0 - smoothstep(0.10, 0.30 + 0.06 * shape, tr)) * step(0.35, hash(tc + 5.0));
+        float core = 1.0 - smoothstep(0.0, 0.16, tr);
+        vec3 tcol = mix(col * 1.18, col * 0.80, core);
+        tcol = mix(tcol, col * vec3(1.35, 1.38, 0.85), smoothstep(0.14, 0.30, tr) * shape * 0.8);
+        col = mix(col, tcol, tuft * tuftFade * inRough);
+        // Tiny flowers: white, yellow, pink and pale blue dots.
+        vec2 fp = vWorld.xz * 2.1;
+        vec2 fc = floor(fp), ff = fract(fp) - 0.5;
+        float fh = hash(fc + 31.0);
+        vec2 fj = (vec2(hash(fc + 3.0), hash(fc + 6.0)) - 0.5) * 0.6;
+        float fr = length(ff - fj);
+        float fl = step(0.93, fh) * (1.0 - smoothstep(0.06, 0.11, fr)) * (1.0 - smoothstep(25.0, 55.0, dist));
+        float kh = hash(fc + 77.0);
+        vec3 fcol = kh < 0.3 ? vec3(1.0, 0.97, 0.90) : kh < 0.55 ? vec3(1.0, 0.88, 0.25) : kh < 0.8 ? vec3(1.0, 0.55, 0.72) : vec3(0.60, 0.78, 1.0);
+        fcol = mix(fcol, vec3(1.0, 0.85, 0.2), 1.0 - smoothstep(0.0, 0.05, fr));
+        col = mix(col, fcol, fl * inRough);
+    }
+    // Worn dirt apron round the tee pad, with a soft grassy edge.
+    vec2 tdv = (vWorld.xz - uTee.xz) * vec2(1.0, 0.62);
+    float dT = length(tdv) + (vnoise(vWorld.xz * 1.7) - 0.5) * 0.9;
+    float dirt = 1.0 - smoothstep(1.1, 1.9, dT);
+    vec3 dirtCol = mix(vec3(0.74, 0.62, 0.40), vec3(0.66, 0.54, 0.34), vnoise(vWorld.xz * 6.0)) * (0.92 + 0.16 * vnoise(vWorld.xz * 40.0));
+    col = mix(col, dirtCol, dirt * 0.75);
 
     // Light: sun plus sky-and-ground ambient.
     float diff = max(dot(n, normalize(uLightDir)), 0.0);

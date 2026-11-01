@@ -55,7 +55,7 @@ const hole = JSON.parse(fs.readFileSync(`hole${holeNum}.json`));
     const V = []; const I = [];
     const hAt = (x,z) => { const fx = Math.min(Math.max((x-x0)/cell,0),nx-1.001), fz = Math.min(Math.max((z-z0)/cell,0),nz-1.001); const ix=Math.floor(fx), iz=Math.floor(fz), tx=fx-ix, tz=fz-iz;
       const g=(i,j)=>H[j*nx+i]; return (g(ix,iz)*(1-tx)+g(ix+1,iz)*tx)*(1-tz)+(g(ix,iz+1)*(1-tx)+g(ix+1,iz+1)*tx)*tz; };
-    for (let iz=0; iz<nz; iz++) for (let ix=0; ix<nx; ix++) { const x=x0+ix*cell, z=z0+iz*cell; const gx=(H[iz*nx+Math.min(ix+1,nx-1)]-H[iz*nx+Math.max(ix-1,0)])/(cell*(ix==0||ix==nx-1?1:2)); const gz=(H[Math.min(iz+1,nz-1)*nx+ix]-H[Math.max(iz-1,0)*nx+ix])/(cell*(iz==0||iz==nz-1?1:2)); const l=Math.hypot(gx,1,gz); V.push(x,H[iz*nx+ix],z,-gx/l,1/l,-gz/l); }
+    for (let iz=0; iz<nz; iz++) for (let ix=0; ix<nx; ix++) { const x=x0+ix*cell, z=z0+iz*cell; let hy=H[iz*nx+ix]; for (const [pcx,pcz,prx,prz,plv] of hole.ponds) { const q=Math.hypot((x-pcx)/prx,(z-pcz)/prz); let u=Math.min(Math.max((q-0.8)/0.5,0),1); const keep=u*u*(3-2*u); hy=hy*keep+Math.min(hy,plv-0.16)*(1-keep); } const gx=(H[iz*nx+Math.min(ix+1,nx-1)]-H[iz*nx+Math.max(ix-1,0)])/(cell*(ix==0||ix==nx-1?1:2)); const gz=(H[Math.min(iz+1,nz-1)*nx+ix]-H[Math.max(iz-1,0)*nx+ix])/(cell*(iz==0||iz==nz-1?1:2)); const l=Math.hypot(gx,1,gz); V.push(x,hy,z,-gx/l,1/l,-gz/l); }
     for (let iz=0; iz<nz-1; iz++) for (let ix=0; ix<nx-1; ix++) { const a=iz*nx+ix,b=a+1,c=a+nx,d=c+1; I.push(a,c,b,b,c,d); }
     const border=[]; for (let ix=0;ix<nx;ix++) border.push(ix); for (let iz=1;iz<nz;iz++) border.push(iz*nx+nx-1); for (let ix=nx-2;ix>=0;ix--) border.push((nz-1)*nx+ix); for (let iz=nz-2;iz>=1;iz--) border.push(iz*nx);
     let avg=0; for (const i of border) avg+=V[i*6+1]; avg/=border.length; const first=V.length/6;
@@ -87,7 +87,7 @@ const hole = JSON.parse(fs.readFileSync(`hole${holeNum}.json`));
     // sky
     gl.disable(gl.DEPTH_TEST); gl.depthMask(false); gl.useProgram(sky); gl.uniformMatrix4fv(U(sky,'uInvVP'),false,invVp); gl.uniform3f(U(sky,'uCamPos'),...eye); gl.uniform3f(U(sky,'uSunDir'),...sun); gl.uniform1f(U(sky,'uTime'),3); gl.bindVertexArray(null); gl.drawArrays(gl.TRIANGLES,0,3); gl.depthMask(true); gl.enable(gl.DEPTH_TEST);
     // terrain
-    gl.useProgram(ter); gl.uniformMatrix4fv(U(ter,'uVP'),false,vp); gl.uniform3f(U(ter,'uLightDir'),...sun); gl.uniform3f(U(ter,'uCamPos'),...eye); gl.uniform3f(U(ter,'uBasket'),...hole.basket);
+    gl.useProgram(ter); gl.uniformMatrix4fv(U(ter,'uVP'),false,vp); gl.uniform3f(U(ter,'uLightDir'),...sun); gl.uniform3f(U(ter,'uCamPos'),...eye); gl.uniform3f(U(ter,'uBasket'),...hole.basket); gl.uniform3f(U(ter,'uTee'),...hole.tee);
     gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D,tex); gl.uniform1i(U(ter,'uSurf'),0); gl.uniform4f(U(ter,'uSurfRect'),x0,z0,1/tw,1/th);
     gl.bindVertexArray(tmesh.vao); gl.drawElements(gl.TRIANGLES,tmesh.n,gl.UNSIGNED_INT,0);
     // objects
@@ -137,15 +137,20 @@ const hole = JSON.parse(fs.readFileSync(`hole${holeNum}.json`));
       const pt = prog('PuffyTrees.kt:VERT','PuffyTrees.kt:FRAG');
       const tms = treeMeshes.map(m => { const vao=gl.createVertexArray(); gl.bindVertexArray(vao); const b1=gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER,b1); gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(m.v),gl.STATIC_DRAW);
         const b2=gl.createBuffer(); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,b2); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER,new Uint16Array(m.i),gl.STATIC_DRAW); for(let a=0;a<3;a++){ gl.enableVertexAttribArray(a); gl.vertexAttribPointer(a,3,gl.FLOAT,false,36,a*12);} return {vao,n:m.i.length}; });
-      const PLD=[[0.12,0.44,0.15],[0.18,0.40,0.10],[0.62,0.30,0.44]], PLL=[[0.66,0.93,0.28],[0.76,0.90,0.30],[1.0,0.80,0.88]], BD=[[0.30,0.20,0.13],[0.52,0.52,0.50]], BL=[[0.70,0.52,0.34],[0.97,0.96,0.92]];
+      const PLD=[[0.08,0.38,0.16],[0.16,0.38,0.10],[0.88,0.50,0.66],[0.84,0.38,0.14],[0.06,0.30,0.17],[0.10,0.46,0.16]], PLL=[[0.62,0.95,0.26],[0.80,0.94,0.28],[1.0,0.78,0.88],[1.0,0.80,0.34],[0.42,0.78,0.34],[0.70,0.96,0.30]], BD=[[0.30,0.20,0.13],[0.52,0.52,0.50]], BL=[[0.70,0.52,0.34],[0.97,0.96,0.92]];
+      const species=(idx,variant,nearWater)=>{ if(nearWater&&idx%2==0) return 6|(5<<4); const oak=idx%4;
+        if(variant==2) return oak|((idx%2==0?2:3)<<4); if(variant==0) return idx%3==0 ? 5|(4<<4) : oak|((idx%5==1?1:0)<<4);
+        if(idx%2==0) return 4|((idx%3==0?1:0)<<4)|(1<<8); return ((idx>>1)%4)|((idx%7==1?1:0)<<4); };
       gl.useProgram(pt); gl.uniform3f(U(pt,'uLightDir'),...sun); gl.uniform3f(U(pt,'uCamPos'),...eye); gl.uniform3f(U(pt,'uFogColor'),0.80,0.89,0.95); gl.uniform1f(U(pt,'uTime'),clockT);
       hole.trees.forEach((t,idx)=>{ const [x,y0,z,ht,cr,vr]=t; const dx=x-eye[0], dz=z-eye[2]; const d2=dx*dx+dz*dz; if (d2>380*380) return;
-        const shape=(idx*7+vr*3)%10; const sc=ht*0.95, wd=Math.min(Math.max(cr/2.3,0.85),1.25); const dist=Math.sqrt(d2); const det=dist<42?2:dist<120?1:0; const tint=0.90+((idx*37)%30)/100;
+        const nearWater=hole.ponds.some(([cx,cz,rx,rz])=>{const a=(x-cx)/(rx+7),b=(z-cz)/(rz+7);return a*a+b*b<1;});
+        const sp=species(idx,vr,nearWater); const seed=sp&15;
+        const sc=ht*0.95*(seed==6?0.8:1), wd=seed==5?0.85:Math.min(Math.max(cr/2.3,0.85),1.25); const dist=Math.sqrt(d2); const det=dist<42?2:dist<120?1:0; const tint=0.90+((idx*37)%30)/100;
         const M=mat.mul(mat.trs(x,y0-0.1,z,1,1,1), mat.mul(rotY((idx*83)%360), mat.trs(0,0,0,sc*wd,sc,sc*wd)));
-        const kind=idx%9==4?2:idx%5==1?1:0, birch=shape>=5?1:0;
+        const kind=(sp>>4)&15, birch=(sp>>8)==1?1:0;
         gl.uniform3fv(U(pt,'uLeafDark'),PLD[kind]); gl.uniform3fv(U(pt,'uLeafLight'),PLL[kind]); gl.uniform3fv(U(pt,'uBarkDark'),BD[birch]); gl.uniform3fv(U(pt,'uBarkLight'),BL[birch]);
         gl.uniformMatrix4fv(U(pt,'uMVP'),false,mat.mul(vp,M)); gl.uniformMatrix4fv(U(pt,'uModel'),false,M); gl.uniform3f(U(pt,'uTint'),tint,tint,tint); gl.uniform1f(U(pt,'uLean'),0.03);
-        const m=tms[(shape%6)*3+det]; gl.bindVertexArray(m.vao); gl.drawElements(gl.TRIANGLES,m.n,gl.UNSIGNED_SHORT,0); });
+        const m=tms[seed*3+det]; gl.bindVertexArray(m.vao); gl.drawElements(gl.TRIANGLES,m.n,gl.UNSIGNED_SHORT,0); });
       useModelShader(); }
     for (const d of hole.decor) { const m = models[d[0]]; if(!m) continue; const dx=d[1]-eye[0], dz=d[3]-eye[2]; if (dx*dx+dz*dz>160*160) continue; drawModel(m, trsM(d[1],d[2]-0.02,d[3],d[5],d[4]), d[6], 0.05); }
     // near grass (same hash grid as the game)
@@ -215,7 +220,11 @@ const hole = JSON.parse(fs.readFileSync(`hole${holeNum}.json`));
     // water
     gl.enable(gl.BLEND); gl.blendFuncSeparate(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA,gl.ZERO,gl.ONE); gl.depthMask(false);
     const disc = (()=>{ const v=[0,0,0,0,1,0], i=[]; const s=40; for(let k=0;k<s;k++){ const a=k/s*Math.PI*2; v.push(Math.cos(a),0,Math.sin(a),0,1,0);} for(let k=0;k<s;k++) i.push(0,1+(k+1)%s,1+k); return mkMesh(v,i); })();
-    for (const [cx,cz,rx,rz,lv] of hole.ponds) { drawM(disc, mat.trs(cx,lv+0.03,cz,rx*1.02,1,rz*1.02),0.10,0.40,0.62,0.55); drawM(disc, mat.trs(cx,lv+0.04,cz,rx*0.97,1,rz*0.97),0.12,0.46,0.70,0.78); drawM(disc, mat.trs(cx,lv+0.05,cz,rx*0.70,1,rz*0.70),0.20,0.56,0.80,0.40); }
+    { const wp = prog('Water.kt:VERT','Water.kt:FRAG'); const seg=56, rings=5; const v=[0,0,0,0,1,0]; for(let r=1;r<=rings;r++) for(let k=0;k<seg;k++){ const a=k/seg*Math.PI*2, rr=r/rings; v.push(Math.cos(a)*rr,0,Math.sin(a)*rr,0,1,0); }
+      const wi=[]; for(let k=0;k<seg;k++) wi.push(0,1+(k+1)%seg,1+k); for(let r=1;r<rings;r++) for(let k=0;k<seg;k++){ const a=1+(r-1)*seg+k, b=1+(r-1)*seg+(k+1)%seg, c=a+seg, d=b+seg; wi.push(a,b,c,b,d,c); }
+      const wm=mkMesh(v,wi); gl.useProgram(wp); gl.uniform3f(U(wp,'uLightDir'),...sun); gl.uniform3f(U(wp,'uCamPos'),...eye); gl.uniform1f(U(wp,'uTime'),clockT);
+      hole.ponds.forEach(([cx,cz,rx,rz,lv],i)=>{ const M=mat.trs(cx,lv+0.04,cz,rx*1.06,1,rz*1.06); gl.uniformMatrix4fv(U(wp,'uMVP'),false,mat.mul(vp,M)); gl.uniformMatrix4fv(U(wp,'uModel'),false,M); gl.uniform1f(U(wp,'uSeed'),i*3.7); gl.bindVertexArray(wm.vao); gl.drawElements(gl.TRIANGLES,wm.n,gl.UNSIGNED_INT,0); });
+      gl.useProgram(main); }
     { const t=hole.tee, hd2=0; const g=(r,a,c)=>drawM(disc, mat.trs(t[0],t[1]+0.05,t[2],r,1,r),c[0],c[1],c[2],a); for(let i=0;i<12;i++){ g(1.2-i*0.065,0.042,[0,.06,.02]); } }
     return gl.getError();
   }, { sh: shaders, treeMeshes, hole, mode, assets, W, HT, charName, process_cam: (process.env.CAM||'3.6,0.7,1.5,14,0.9').split(',').map(Number), FOV: +(process.env.FOV||50) });

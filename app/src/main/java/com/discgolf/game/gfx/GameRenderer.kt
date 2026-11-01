@@ -43,6 +43,7 @@ class GameRenderer(private val context: android.content.Context, private val ctl
 
     private lateinit var meshes: MeshSet
     private lateinit var sky: Sky
+    private lateinit var water: WaterShader
     private lateinit var terrainShader: TerrainShader
     private var terrain: TerrainRender? = null
     private val invVp = FloatArray(16)
@@ -97,6 +98,7 @@ class GameRenderer(private val context: android.content.Context, private val ctl
         // A new GL context (first start, or coming back to the app) has none of the old GPU objects.
         terrain = null
         sky = Sky()
+        water = WaterShader()
         terrainShader = TerrainShader()
         meshes = MeshSet()
         golfer = GolferModel(meshes)
@@ -273,12 +275,21 @@ class GameRenderer(private val context: android.content.Context, private val ctl
         draw(meshes.cube, xf(t.x, t.y + 0.015f, t.z, 1.55f, 0.05f, 2.85f, dir0), 0.40f, 0.29f, 0.17f)   // timber frame
         draw(meshes.cube, xf(t.x, t.y + 0.03f, t.z, 1.28f, 0.05f, 2.58f, dir0), 0.30f, 0.38f, 0.33f)    // pad
         draw(meshes.cube, xf(t.x, t.y + 0.056f, t.z - 0.0f, 1.28f, 0.004f, 0.10f, dir0), 0.92f, 0.92f, 0.88f)  // throwing line
+        // White tee markers at the front corners, each a squashed ball on a little wooden foot.
+        for (side in intArrayOf(-1, 1)) {
+            val mx = t.x + ux * 1.22f + rx * 0.72f * side; val mz = t.z + uz * 1.22f + rz * 0.72f * side
+            val my = h.groundAt(mx, mz)
+            draw(meshes.cyl, xf(mx, my, mz, 0.07f, 0.05f, 0.07f), 0.40f, 0.29f, 0.17f)
+            draw(meshes.sphere, xf(mx, my + 0.12f, mz, 0.11f, 0.10f, 0.11f), 0.97f, 0.97f, 0.95f)
+        }
         // Sign: post and board, to the golfer's right.
         val sx = t.x + rx * 1.35f - ux * 0.4f; val sz = t.z + rz * 1.35f - uz * 0.4f
         val sy = h.groundAt(sx, sz)
         draw(meshes.cyl, xf(sx, sy, sz, 0.035f, 1.05f, 0.035f), 0.36f, 0.26f, 0.15f)
         val bc = when (h.par) { 3 -> floatArrayOf(0.20f, 0.62f, 0.34f); 4 -> floatArrayOf(0.20f, 0.45f, 0.80f); else -> floatArrayOf(0.80f, 0.25f, 0.22f) }
         draw(meshes.cube, xf(sx, sy + 0.92f, sz, 0.56f, 0.32f, 0.04f, dir0 + 180f), 0.93f, 0.92f, 0.86f)
+        draw(meshes.cube, xf(sx, sy + 1.10f, sz, 0.62f, 0.035f, 0.10f, dir0 + 180f), 0.40f, 0.29f, 0.17f)    // little roof
+        draw(meshes.cube, xf(sx, sy + 0.745f, sz, 0.60f, 0.03f, 0.07f, dir0 + 180f), 0.40f, 0.29f, 0.17f)    // sill
         draw(meshes.cube, xf(sx - ux * 0.012f, sy + 0.98f, sz - uz * 0.012f, 0.5f, 0.10f, 0.045f, dir0 + 180f), bc[0], bc[1], bc[2])
         // Pips for the par.
         for (k in 0 until h.par) {
@@ -317,13 +328,15 @@ class GameRenderer(private val context: android.content.Context, private val ctl
             val dx = t.x - camPos.x; val dz = t.z - camPos.z
             val d2 = dx * dx + dz * dz
             if (d2 > 380f * 380f) continue
-            val shape = (idx * 7 + t.variant * 3) % treeModels.size       // 0-4 broadleaf, 5-9 birch
+            val nearWater = h.ponds.any { val px = (t.x - it.cx) / (it.rx + 7f); val pz = (t.z - it.cz) / (it.rz + 7f); px * px + pz * pz < 1f }
+            val sp = PuffyTrees.species(idx, t.variant, nearWater)
             val y0 = h.groundAt(t.x, t.z) - 0.1f
             val tint = 0.90f + ((idx * 37) % 30) / 100f
-            val sc = treeScale(t)
-            ms.identity().translate(t.x, y0, t.z).rotate((idx * 83 % 360).toFloat(), 0f, 1f, 0f).scale(sc * treeWiden(t), sc, sc * treeWiden(t))
+            val sc = treeScale(t) * (if ((sp and 15) == 6) 0.8f else 1f)
+            val wd = if ((sp and 15) == 5) 0.85f else treeWiden(t)
+            ms.identity().translate(t.x, y0, t.z).rotate((idx * 83 % 360).toFloat(), 0f, 1f, 0f).scale(sc * wd, sc, sc * wd)
             Matrix.multiplyMM(mvp, 0, vp, 0, ms.top, 0)
-            puffy.draw(shape % PuffyTreeGen.SEEDS, puffy.detailFor(sqrt(d2)), mvp, ms.top, tint, 0.03f, if (idx % 9 == 4) 2 else if (idx % 5 == 1) 1 else 0, shape >= 5)
+            puffy.draw(sp and 15, puffy.detailFor(sqrt(d2)), mvp, ms.top, tint, 0.03f, (sp shr 4) and 15, (sp shr 8) == 1)
         }
         modelShader.begin(sun, camPos.x, camPos.y, camPos.z, clock)
         val decorList = decorFor(h)
@@ -345,6 +358,8 @@ class GameRenderer(private val context: android.content.Context, private val ctl
             val c = 0.50f * d.tint
             draw(meshes.sphere, xf(d.x, y + 0.12f * d.scale, d.z, d.scale, d.scale * 0.62f, d.scale * 1.2f, d.rot), c, c * 0.97f, c * 0.90f)
             draw(meshes.sphere, xf(d.x + 0.45f * d.scale, y + 0.05f * d.scale, d.z + 0.2f * d.scale, d.scale * 0.55f, d.scale * 0.4f, d.scale * 0.6f, d.rot), c * 1.1f, c * 1.07f, c)
+            draw(meshes.sphere, xf(d.x - 0.30f * d.scale, y + 0.04f * d.scale, d.z - 0.35f * d.scale, d.scale * 0.45f, d.scale * 0.32f, d.scale * 0.48f, d.rot), c * 0.92f, c * 0.90f, c * 0.86f)
+            draw(meshes.sphere, xf(d.x, y + 0.27f * d.scale, d.z, d.scale * 0.62f, d.scale * 0.17f, d.scale * 1.05f, d.rot), 0.30f, 0.52f, 0.20f)   // mossy cap
         }
     }
 
@@ -562,20 +577,15 @@ class GameRenderer(private val context: android.content.Context, private val ctl
     // ---- transparent things
 
     private fun drawWater(h: Hole) {
-        for (p in h.ponds) {
+        water.begin(sun, camPos.x, camPos.y, camPos.z, clock)
+        for ((i, p) in h.ponds.withIndex()) {
             val dx = p.cx - camPos.x; val dz = p.cz - camPos.z
             if (dx * dx + dz * dz > 260f * 260f) continue
-            draw(meshes.disc, xf(p.cx, p.level + 0.03f, p.cz, p.rx * 1.02f, 1f, p.rz * 1.02f), 0.10f, 0.40f, 0.62f, 0.55f)
-            draw(meshes.disc, xf(p.cx, p.level + 0.04f, p.cz, p.rx * 0.97f, 1f, p.rz * 0.97f), 0.14f, 0.52f, 0.72f, 0.80f)
-            draw(meshes.disc, xf(p.cx, p.level + 0.05f, p.cz, p.rx * 0.62f, 1f, p.rz * 0.62f), 0.20f, 0.56f, 0.80f, 0.40f)
-            // Pale foam line along the shore, and two ripple rings that swell and fade out.
-            draw(meshes.ringThin, xf(p.cx, p.level + 0.06f, p.cz, p.rx * 0.985f, 0.5f, p.rz * 0.985f), 0.92f, 0.97f, 1.0f, 0.55f)
-            for (k in 0 until 2) {
-                val ph = ((clock * 0.12f + k * 0.5f + p.cx * 0.01f) % 1f)
-                val rr = 0.15f + 0.65f * ph
-                draw(meshes.ringThin, xf(p.cx, p.level + 0.07f, p.cz, p.rx * rr, 0.3f, p.rz * rr), 0.85f, 0.95f, 1f, 0.5f * (1f - ph))
-            }
+            val m = xf(p.cx, p.level + 0.04f, p.cz, p.rx * 1.06f, 1f, p.rz * 1.06f)
+            Matrix.multiplyMM(mvp, 0, vp, 0, m, 0)
+            water.draw(mvp, m, i * 3.7f)
         }
+        GLES30.glUseProgram(prog)
     }
 
     /** A flat disc lying on the ground, tilted to the slope there, [lift] metres above the surface. */
