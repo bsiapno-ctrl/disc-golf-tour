@@ -89,7 +89,6 @@ class GameController(
 
     /** Slow-motion factor (1, 0.5, 0.25) applied to the throw swing and flight playback only. */
     var timeScale = 1f
-        private set
     var report: ThrowReport? = null
         private set
     var headline: String = ""
