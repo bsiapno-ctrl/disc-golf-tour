@@ -38,6 +38,11 @@ class HudView(context: Context, private val ctl: GameController) : View(context)
     var onResume: () -> Unit = {}
     var onQuit: () -> Unit = {}
     var paused = false
+    /** Slow-motion factor for the swing and flight (1, 0.5, 0.25); the activity applies it. */
+    var timeScale = 1f
+    var onTimeScale: (Float) -> Unit = {}
+    private val tsOptions = floatArrayOf(1f, 0.5f, 0.25f)
+    private val tsBtns = Array(3) { RectF() }
     var showCard = false
 
     /** -1..1 aim stick command (0 when released). Read by the activity every frame. */
@@ -105,6 +110,7 @@ class HudView(context: Context, private val ctl: GameController) : View(context)
         menuRect.set(L.menu.l, L.menu.t, L.menu.r, L.menu.b)
         cardBtn.set(L.cardBtn.l, L.cardBtn.t, L.cardBtn.r, L.cardBtn.b)
         resumeBtn.set(wf / 2f - 110 * d, hf / 2f - 18 * d, wf / 2f + 110 * d, hf / 2f + 32 * d)
+        for (i in 0..2) { val x0 = wf / 2f - 111 * d + i * 76 * d; tsBtns[i].set(x0, hf / 2f - 82 * d, x0 + 70 * d, hf / 2f - 46 * d) }
         quitBtn.set(wf / 2f - 110 * d, hf / 2f + 44 * d, wf / 2f + 110 * d, hf / 2f + 94 * d)
     }
 
@@ -143,6 +149,7 @@ class HudView(context: Context, private val ctl: GameController) : View(context)
         if (paused) {
             if (resumeBtn.contains(x, y)) onResume()
             else if (quitBtn.contains(x, y)) onQuit()
+            else for (i in 0..2) if (tsBtns[i].contains(x, y)) { timeScale = tsOptions[i]; onTimeScale(timeScale) }
             return
         }
         if (ctl.phase == Phase.ROUND_DONE) { if (ctl.phaseTime > 1.0f) onQuit(); return }
@@ -262,6 +269,16 @@ class HudView(context: Context, private val ctl: GameController) : View(context)
         c.drawCircle(cx, cy + (if (active) 3 else 0) * d, rad, p)
         p.style = Paint.Style.FILL
         text(c, label, cx, cy + 7 * d, 20f, Color.WHITE, Paint.Align.CENTER)
+    }
+
+    /** Chunky left/right arrow: dark outline, gold fill (no font glyphs). */
+    private fun arrowTri(c: Canvas, x: Float, y: Float, sz: Float, right: Boolean) {
+        val k = if (right) 1f else -1f
+        path.reset(); path.moveTo(x + k * sz, y); path.lineTo(x - k * sz * 0.7f, y - sz); path.lineTo(x - k * sz * 0.7f, y + sz); path.close()
+        p.style = Paint.Style.STROKE; p.strokeJoin = Paint.Join.ROUND; p.strokeWidth = 3 * d; p.color = Color.argb(235, 6, 16, 40)
+        c.drawPath(path, p)
+        p.style = Paint.Style.FILL; p.color = Ui.GOLD
+        c.drawPath(path, p)
     }
 
     private fun triangle(c: Canvas, x: Float, y: Float, size: Float, up: Boolean, color: Int) {
@@ -597,8 +614,8 @@ class HudView(context: Context, private val ctl: GameController) : View(context)
         p.style = Paint.Style.FILL; p.color = Color.argb(90, 6, 16, 40)
         c.drawCircle(discPrev.centerX(), cardRect.top + 27 * d, 13 * d, p)
         c.drawCircle(discNext.centerX(), cardRect.top + 27 * d, 13 * d, p)
-        text(c, "◀", discPrev.centerX(), cardRect.top + 27 * d + 7 * d, 16f, Ui.GOLD, Paint.Align.CENTER)
-        text(c, "▶", discNext.centerX(), cardRect.top + 27 * d + 7 * d, 16f, Ui.GOLD, Paint.Align.CENTER)
+        arrowTri(c, discPrev.centerX(), cardRect.top + 27 * d, 7 * d, false)
+        arrowTri(c, discNext.centerX(), cardRect.top + 27 * d, 7 * d, true)
         val nx = cardRect.left + 90 * d
         val nw = discNext.left - nx - 2 * d
         text(c, disc.displayName.uppercase(), nx, cardRect.top + 24 * d, 17f, Ui.WHITE, maxW = nw)
@@ -615,8 +632,8 @@ class HudView(context: Context, private val ctl: GameController) : View(context)
             val x0 = px0 + i * (pwid + gap)
             statChip(c, x0, py0, x0 + pwid, py1, cols[i], labels[i], vals[i])
         }
-        text(c, "◀", shapePrev.left + 20 * d, shapePrev.centerY() + 6 * d + 2 * d, 16f, Ui.GOLD, Paint.Align.CENTER)
-        text(c, "▶", shapeNext.right - 20 * d, shapeNext.centerY() + 6 * d + 2 * d, 16f, Ui.GOLD, Paint.Align.CENTER)
+        arrowTri(c, shapePrev.left + 20 * d, shapePrev.centerY() + 2 * d, 7 * d, false)
+        arrowTri(c, shapeNext.right - 20 * d, shapeNext.centerY() + 2 * d, 7 * d, true)
         text(c, ctl.shape.label.uppercase(), cardRect.centerX(), shapePrev.centerY() + 8 * d, 15f, Ui.CYAN, Paint.Align.CENTER, maxW = cardRect.width() - 150 * d)
     }
 
@@ -656,89 +673,91 @@ class HudView(context: Context, private val ctl: GameController) : View(context)
         stick.draw(c, p, d, ctl.phase == Phase.AIMING)
     }
 
-    // (4) power / accuracy gauge: wide glossy horizontal meter with tick marks and clear sweet-spot markers
+    // (4) Hot Shots style swing dial: power ring fills clockwise, inner arc holds the accuracy needle, glossy cap shows % power
     private fun drawMeter(c: Canvas) {
         val phase = ctl.phase
         val m = ctl.meter
         val M = L.meter
         val power = if (m != null && (phase == Phase.CHARGING || phase == Phase.ACCURACY)) m.power else 0f
         val accPhase = phase == Phase.ACCURACY
-        r.set(M.l, M.t, M.r, M.b)
-        panel(c, r, if (accPhase) 235 else 220, if (accPhase) Ui.ORANGE else Ui.GOLD)
-        val bl = M.l + 12 * d; val br = M.r - 12 * d; val bw = br - bl
+        val cx = M.centerXf(); val cy = (M.t + M.b) / 2f; val R = M.w / 2f
 
-        // ---- accuracy strip
-        val ay = M.t + 8 * d; val ah = 12 * d
-        trough(c, bl, ay, br, ay + ah)
-        if (m != null) {
-            val half = m.sweetHalfWidth * bw
-            val a = if (accPhase) 255 else 110
-            r2.set(bl + bw / 2f - half, ay + 2 * d, bl + bw / 2f + half, ay + ah - 2 * d)
-            p.style = Paint.Style.FILL
-            p.shader = LinearGradient(0f, r2.top, 0f, r2.bottom, Color.argb(a, 255, 233, 120), Color.argb(a, 214, 150, 0), Shader.TileMode.CLAMP)
-            c.drawRoundRect(r2, 4 * d, 4 * d, p)
-            p.shader = null
-            p.color = Color.argb(a, 255, 255, 255)
-            c.drawRect(r2.left - 1 * d, ay - 2 * d, r2.left + 1 * d, ay + ah + 2 * d, p)
-            c.drawRect(r2.right - 1 * d, ay - 2 * d, r2.right + 1 * d, ay + ah + 2 * d, p)
-            if (accPhase) {
-                val mx = bl + clamp(m.marker, 0f, 1f) * bw
-                p.style = Paint.Style.STROKE; p.strokeCap = Paint.Cap.ROUND
-                p.strokeWidth = 6 * d; p.color = Color.argb(240, 6, 16, 40)
-                c.drawLine(mx, ay - 2 * d, mx, ay + ah + 2 * d, p)
-                p.strokeWidth = 3f * d; p.color = Color.WHITE
-                c.drawLine(mx, ay - 2 * d, mx, ay + ah + 2 * d, p)
-                p.strokeCap = Paint.Cap.BUTT; p.style = Paint.Style.FILL
-            }
-        }
-        p.style = Paint.Style.FILL; p.color = Color.argb(70, 255, 255, 255)
-        r2.set(bl + 6 * d, ay + 2 * d, br - 6 * d, ay + ah * 0.45f)
-        c.drawRoundRect(r2, 3 * d, 3 * d, p)
-
-        // ---- power bar
-        val py = M.t + 29 * d; val ph = 20 * d
-        trough(c, bl, py, br, py + ph)
-        val z1 = bl + bw * 0.60f; val z2 = bl + bw * 0.88f; val z3 = bl + bw * 0.97f
-        val fill = bw * power
-        // faint zone preview over the whole track, full colour where filled
-        for (pass in 0..1) {
-            c.save()
-            path.reset(); path.addRoundRect(bl + 2 * d, py + 2 * d, br - 2 * d, py + ph - 2 * d, ph / 2f, ph / 2f, Path.Direction.CW)
-            c.clipPath(path)
-            if (pass == 1) c.clipRect(bl, py, bl + fill, py + ph)
-            val al = if (pass == 0) 70 else 255
-            p.style = Paint.Style.FILL
-            p.color = Color.argb(al, 47, 193, 106); c.drawRect(bl, py, z1, py + ph, p)
-            p.color = Color.argb(al, 245, 197, 24); c.drawRect(z1, py, z2, py + ph, p)
-            p.color = Color.argb(al, 232, 69, 60); c.drawRect(z2, py, br, py + ph, p)
-            if (pass == 1) {
-                p.color = Color.argb(80, 255, 255, 255)
-                c.drawRect(bl, py, br, py + ph * 0.45f, p)
-                p.color = Color.argb(60, 0, 0, 0)
-                c.drawRect(bl, py + ph * 0.78f, br, py + ph, p)
-            }
-            c.restore()
-        }
-        // perfect-power band
-        p.style = Paint.Style.STROKE; p.strokeWidth = 2.5f * d; p.color = Color.WHITE
-        c.drawRect(z3, py + 2 * d, br - 2 * d, py + ph - 2 * d, p)
+        // body: chunky outline, navy face, white rim
+        p.style = Paint.Style.FILL; p.color = Color.argb(100, 0, 0, 0)
+        c.drawCircle(cx, cy + 4 * d, R, p)
+        p.style = Paint.Style.STROKE; p.strokeWidth = 7 * d; p.color = Color.argb(235, 6, 16, 40)
+        c.drawCircle(cx, cy, R, p)
         p.style = Paint.Style.FILL
-                // ticks under the bar: ten steps, taller at 50 %
-        for (i in 0..10) {
-            val tx = bl + bw * i / 10f
-            val tl = if (i % 5 == 0) 5 * d else 3 * d
-            p.color = Color.argb(if (i % 5 == 0) 230 else 150, 255, 255, 255)
-            c.drawRect(tx - 1 * d, py + ph + 1 * d, tx + 1 * d, py + ph + 1 * d + tl, p)
+        p.shader = LinearGradient(0f, cy - R, 0f, cy + R, Color.parseColor("#2A5CAB"), Color.parseColor("#0A1E44"), Shader.TileMode.CLAMP)
+        c.drawCircle(cx, cy, R, p)
+        p.shader = null
+        p.style = Paint.Style.STROKE; p.strokeWidth = 3 * d; p.color = if (accPhase) Ui.ORANGE else Color.WHITE
+        c.drawCircle(cx, cy, R, p)
+
+        // power ring: green / yellow / red zones, faint preview everywhere, bright where filled
+        val rr = R - 9 * d; val sw = 11 * d
+        r.set(cx - rr, cy - rr, cx + rr, cy + rr)
+        p.strokeWidth = sw; p.strokeCap = Paint.Cap.BUTT
+        val zs = floatArrayOf(0f, 0.60f, 0.88f, 1f)
+        val zc = intArrayOf(Color.rgb(47, 193, 106), Color.rgb(245, 197, 24), Color.rgb(232, 69, 60))
+        for (pass in 0..1) for (i in 0..2) {
+            val a0 = zs[i]; val a1 = if (pass == 1) min(zs[i + 1], power) else zs[i + 1]
+            if (a1 <= a0) continue
+            p.color = Color.argb(if (pass == 0) 70 else 255, Color.red(zc[i]), Color.green(zc[i]), Color.blue(zc[i]))
+            c.drawArc(r, -90f + 360f * a0, 360f * (a1 - a0), false, p)
         }
+        // PERFECT segment: white-rimmed arc at the very end of the ring
+        val pr = rr + sw / 2f + 1 * d; val pr2 = rr - sw / 2f - 1 * d
+        p.strokeWidth = 2.5f * d; p.color = Color.WHITE
+        r2.set(cx - pr, cy - pr, cx + pr, cy + pr); c.drawArc(r2, -90f + 360f * 0.97f, 360f * 0.03f, false, p)
+        r2.set(cx - pr2, cy - pr2, cx + pr2, cy + pr2); c.drawArc(r2, -90f + 360f * 0.97f, 360f * 0.03f, false, p)
+        p.strokeCap = Paint.Cap.BUTT
         // pin marker: the power to release at
         val pin = ctl.pinPower
-        val pinX = bl + min(pin, 1f) * bw
         val out = pin > 1.001f
-        triangle(c, pinX, py - 4 * d, 5 * d, false, Color.argb(255, 6, 16, 40))
-        triangle(c, pinX, py - 4 * d, 3.4f * d, false, if (out) Ui.ORANGE else Ui.GOLD)
-        p.style = Paint.Style.STROKE; p.strokeWidth = 2.5f * d; p.color = if (out) Ui.ORANGE else Ui.GOLD
-        c.drawLine(pinX, py, pinX, py + ph, p)
+        val pa = Math.toRadians((-90f + 360f * min(pin, 1f)).toDouble())
+        val pc = cos(pa).toFloat(); val ps = sin(pa).toFloat()
+        p.strokeCap = Paint.Cap.ROUND
+        p.strokeWidth = 6 * d; p.color = Color.argb(240, 6, 16, 40)
+        c.drawLine(cx + pc * (rr - sw * 0.8f), cy + ps * (rr - sw * 0.8f), cx + pc * (rr + sw * 0.8f), cy + ps * (rr + sw * 0.8f), p)
+        p.strokeWidth = 3 * d; p.color = if (out) Ui.ORANGE else Ui.GOLD
+        c.drawLine(cx + pc * (rr - sw * 0.8f), cy + ps * (rr - sw * 0.8f), cx + pc * (rr + sw * 0.8f), cy + ps * (rr + sw * 0.8f), p)
+        p.strokeCap = Paint.Cap.BUTT
+
+        // accuracy arc (top, 120 degrees): gold sweet spot with the needle
+        val ar = rr - sw / 2f - 8 * d
+        r2.set(cx - ar, cy - ar, cx + ar, cy + ar)
+        val a0 = 210f; val span = 120f
+        p.style = Paint.Style.STROKE; p.strokeWidth = 7 * d; p.color = Color.argb(if (accPhase) 200 else 90, 6, 16, 40)
+        c.drawArc(r2, a0, span, false, p)
+        if (m != null) {
+            val half = m.sweetHalfWidth * span
+            p.strokeWidth = 5 * d; p.color = Color.argb(if (accPhase) 255 else 120, 255, 214, 60)
+            c.drawArc(r2, a0 + span / 2f - half, half * 2f, false, p)
+        }
+        // cap
+        val capR = R * 0.40f
         p.style = Paint.Style.FILL
+        p.shader = RadialGradient(cx - capR * 0.3f, cy - capR * 0.4f, capR * 1.4f, Color.parseColor("#FFE98A"), if (accPhase) Ui.ORANGE else Ui.GOLD_DARK, Shader.TileMode.CLAMP)
+        c.drawCircle(cx, cy + 2 * d, capR, p)
+        p.shader = null
+        if (accPhase && m != null) {
+            val na = Math.toRadians((a0 + clamp(m.marker, 0f, 1f) * span).toDouble())
+            val nc = cos(na).toFloat(); val ns = sin(na).toFloat()
+            p.strokeCap = Paint.Cap.ROUND
+            p.strokeWidth = 6 * d; p.color = Color.argb(240, 6, 16, 40)
+            c.drawLine(cx + nc * capR * 0.6f, cy + ns * capR * 0.6f, cx + nc * (ar + 5 * d), cy + ns * (ar + 5 * d), p)
+            p.strokeWidth = 3 * d; p.color = Color.WHITE
+            c.drawLine(cx + nc * capR * 0.6f, cy + ns * capR * 0.6f, cx + nc * (ar + 5 * d), cy + ns * (ar + 5 * d), p)
+            p.strokeCap = Paint.Cap.BUTT
+        }
+        p.style = Paint.Style.STROKE; p.strokeWidth = 3 * d; p.color = Color.argb(235, 6, 16, 40)
+        c.drawCircle(cx, cy + 2 * d, capR, p)
+        p.style = Paint.Style.FILL; p.color = Color.argb(110, 255, 255, 255)
+        r2.set(cx - capR * 0.7f, cy + 2 * d - capR * 0.85f, cx + capR * 0.7f, cy + 2 * d - capR * 0.1f)
+        c.drawOval(r2, p)
+        text(c, "${(power * 100).toInt()}%", cx, cy + 2 * d + 5 * d, 14f, Ui.NAVY, Paint.Align.CENTER, maxW = capR * 1.7f)
+
         if (out) {
             val K = L.pinChip
             toon(c, K, 8 * d, Color.parseColor("#FF9A3C"), Color.parseColor("#C2570F"))
@@ -746,12 +765,12 @@ class HudView(context: Context, private val ctl: GameController) : View(context)
         }
 
         val hint = when (phase) {
-            Phase.AIMING -> "AIM, THEN PRESS & HOLD — RELEASE TO SET POWER"
-            Phase.CHARGING -> if (m != null && m.power >= 1f) "TOO LATE!" else "RELEASE AT THE PIN MARK"
-            else -> "TAP TO STOP THE MARKER IN THE GOLD"
+            Phase.AIMING -> "HOLD, THEN RELEASE"
+            Phase.CHARGING -> if (m != null && m.power >= 1f) "TOO LATE!" else "RELEASE AT THE MARK"
+            else -> "TAP IN THE GOLD"
         }
         val H = L.meterHint
-        toon(c, H, 10 * d, Color.parseColor("#1B3E7A"), Color.parseColor("#0A1E44"))
+        toon(c, H, 9 * d, Color.parseColor("#1B3E7A"), Color.parseColor("#0A1E44"))
         text(c, hint, H.centerXf(), H.t + H.h / 2f + 4 * d, 11f, Ui.WHITE, Paint.Align.CENTER, display = false, maxW = H.w - 12 * d)
     }
 
@@ -884,9 +903,16 @@ class HudView(context: Context, private val ctl: GameController) : View(context)
         p.style = Paint.Style.FILL
         p.color = Color.argb(150, 0, 0, 0)
         c.drawRect(0f, 0f, w, h, p)
-        r.set(w / 2f - 160 * d, h / 2f - 100 * d, w / 2f + 160 * d, h / 2f + 112 * d)
+        r.set(w / 2f - 160 * d, h / 2f - 150 * d, w / 2f + 160 * d, h / 2f + 112 * d)
         panel(c, r, 240)
-        text(c, "PAUSED", w / 2f, r.top + 44 * d, 28f, Ui.GOLD, Paint.Align.CENTER)
+        text(c, "PAUSED", w / 2f, r.top + 40 * d, 28f, Ui.GOLD, Paint.Align.CENTER)
+        text(c, "SLOW MOTION", w / 2f, tsBtns[0].top - 5 * d, 10f, Color.parseColor("#CFE3FF"), Paint.Align.CENTER, display = false)
+        val tsLabels = arrayOf("1x", "0.5x", "0.25x")
+        for (i in 0..2) {
+            val on = abs(timeScale - tsOptions[i]) < 0.01f
+            if (on) pill(c, tsBtns[i], Color.parseColor("#FFD84A"), Ui.GOLD_DARK) else pill(c, tsBtns[i], Color.parseColor("#3A68B0"), Color.parseColor("#14396F"))
+            text(c, tsLabels[i], tsBtns[i].centerX(), tsBtns[i].centerY() + 6 * d, 16f, if (on) Ui.NAVY else Ui.WHITE, Paint.Align.CENTER)
+        }
         pill(c, resumeBtn, Color.parseColor("#FFD84A"), Ui.GOLD_DARK)
         text(c, "RESUME", resumeBtn.centerX(), resumeBtn.centerY() + 7 * d, 20f, Ui.NAVY, Paint.Align.CENTER)
         pill(c, quitBtn, Color.parseColor("#3A68B0"), Color.parseColor("#14396F"))

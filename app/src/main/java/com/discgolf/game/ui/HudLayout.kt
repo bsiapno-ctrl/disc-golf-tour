@@ -33,12 +33,13 @@ object HudLayout {
         baseDp * min(w / baseDp / 760f, h / baseDp / 360f).coerceIn(0.5f, 1.6f)
 
     fun compute(w: Float, h: Float, d: Float): HudRects {
-        val acx = w - 96 * d; val acy = h - 100 * d; val ar = 70 * d
+        val acx = w - 82 * d; val acy = h - 100 * d; val ar = 64 * d
         val mapTop = 100 * d
         val mapBottom = min(mapTop + 190 * d, acy - ar - 10 * d)
         val map = if (mapBottom - mapTop < 90 * d) null else HRect(w - 124 * d, mapTop, w - 12 * d, mapBottom)
         // Stick hit zone is radius * 1.35 around (70, h-56) with radius 46.
-        val mR = min(w - 176 * d, 590 * d)   // slim gauge, left-anchored so the screen centre stays clear
+        // Round swing dial sits left of the action button, right of the 60% x line so the golfer's body stays visible.
+        val dcx = w - 214 * d; val dR = 48 * d
         val sr = 46 * d * 1.35f
         return HudRects(
             holeBanner = HRect(12 * d, 10 * d, 222 * d, 70 * d),
@@ -50,9 +51,9 @@ object HudLayout {
             minimap = map,
             discCard = HRect(8 * d, h - 228 * d, 220 * d, h - 124 * d),
             throwPanel = HRect(140 * d, h - 92 * d, 292 * d, h - 4 * d),
-            meter = HRect(300 * d, h - 88 * d, mR, h - 32 * d),
-            meterHint = HRect(300 * d, h - 26 * d, mR, h - 6 * d),
-            pinChip = HRect(mR - 100 * d, h - 110 * d, mR, h - 92 * d),
+            meter = HRect(dcx - dR, h - 126 * d, dcx + dR, h - 126 * d + 2 * dR),
+            meterHint = HRect(w - 276 * d, h - 24 * d, w - 152 * d, h - 6 * d),
+            pinChip = HRect(w - 264 * d, h - 150 * d, w - 164 * d, h - 132 * d),
             stick = HRect(70 * d - sr, h - 56 * d - sr, 70 * d + sr, h - 56 * d + sr),
             action = HRect(acx - ar, acy - ar, acx + ar, acy + ar),
             actionCx = acx, actionCy = acy, actionR = ar,

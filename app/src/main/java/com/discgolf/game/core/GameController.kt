@@ -86,6 +86,9 @@ class GameController(
         private set
     /** Seconds since release, for the swing animation. -1 when no swing is in progress. */
     var swingClock = -1f
+
+    /** Slow-motion factor (1, 0.5, 0.25) applied to the throw swing and flight playback only. */
+    var timeScale = 1f
         private set
     var report: ThrowReport? = null
         private set
@@ -223,7 +226,7 @@ class GameController(
     fun update(dt: Float) {
         phaseTime += dt
         aimPitch += (aimPitchTarget - aimPitch) * (1f - Math.exp((-6f * dt).toDouble()).toFloat())
-        if (swingClock >= 0f) swingClock += dt
+        if (swingClock >= 0f) swingClock += dt * timeScale
 
         when (phase) {
             Phase.INTRO -> if (phaseTime > 3.2f) setPhase(Phase.AIMING)
@@ -236,7 +239,7 @@ class GameController(
                 m.update(dt)
                 syncMeterPhase()
             }
-            Phase.FLIGHT -> stepFlight(dt)
+            Phase.FLIGHT -> stepFlight(dt * timeScale)
             Phase.RESULT -> if (phaseTime > 2.6f) afterResult()
             else -> Unit
         }

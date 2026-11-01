@@ -28,6 +28,13 @@ object SaveStore {
         ctx.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit().putString("course", courseId).putString("layout", layoutName).apply()
     }
 
+    fun loadTimeScale(ctx: Context): Float =
+        ctx.getSharedPreferences(FILE, Context.MODE_PRIVATE).getFloat("timeScale", 1f).let { if (it == 0.5f || it == 0.25f) it else 1f }
+
+    fun saveTimeScale(ctx: Context, v: Float) {
+        ctx.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit().putFloat("timeScale", v).apply()
+    }
+
     fun clear(ctx: Context) {
         ctx.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit().remove(KEY).apply()
     }

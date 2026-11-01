@@ -81,8 +81,11 @@ class GameActivity : Activity() {
             onDisc = { ctl.nextDisc(it) }
             onShape = { ctl.nextShape(it) }
             onResume = { paused = false }
+            timeScale = SaveStore.loadTimeScale(this@GameActivity)
+            onTimeScale = { v -> ctl.timeScale = v; SaveStore.saveTimeScale(this@GameActivity, v) }
             onQuit = { endRound() }
         }
+        ctl.timeScale = hud.timeScale
         val root = FrameLayout(this)
         root.addView(glView, FrameLayout.LayoutParams(-1, -1))
         root.addView(hud, FrameLayout.LayoutParams(-1, -1))
