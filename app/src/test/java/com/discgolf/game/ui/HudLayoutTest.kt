@@ -27,4 +27,14 @@ class HudLayoutTest {
             wDp += 40
         }
     }
+
+    @Test fun topPanelsKeepScreenCentreClearForGolfer() {
+        for (wDp in 640..2200 step 40) for (ratio in floatArrayOf(1.3f, 1.78f, 2.17f, 2.4f)) {
+            val w = wDp * 2f; val h = w / ratio
+            val L = HudLayout.compute(w, h, HudLayout.scale(w, h, 2f))
+            for ((n, rc) in L.all()) if (rc.t < h * 0.5f && n != "action" && n != "stick") {
+                assertTrue("$n $rc enters centre band at ${wDp}dp r=$ratio", rc.r <= w * 0.30f + 1f || rc.l >= w * 0.70f - 1f)
+            }
+        }
+    }
 }

@@ -42,8 +42,8 @@ object HudLayout {
         val sr = 46 * d * 1.35f
         return HudRects(
             holeBanner = HRect(12 * d, 10 * d, 222 * d, 70 * d),
-            distChip = HRect(12 * d, 76 * d, 150 * d, 104 * d),
-            scorePanel = HRect(w / 2f - 100 * d, 10 * d, w / 2f + 100 * d, 62 * d),
+            distChip = HRect(w - 228 * d, 108 * d, w - 130 * d, 136 * d),
+            scorePanel = HRect(12 * d, 76 * d, 222 * d, 124 * d),
             windPanel = HRect(w - 228 * d, 10 * d, w - 136 * d, 102 * d),
             menu = HRect(w - 126 * d, 10 * d, w - 12 * d, 46 * d),
             cardBtn = HRect(w - 126 * d, 52 * d, w - 12 * d, 88 * d),

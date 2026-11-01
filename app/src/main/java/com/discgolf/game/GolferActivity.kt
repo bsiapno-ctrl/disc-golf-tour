@@ -125,14 +125,14 @@ class GolferActivity : Activity() {
 
         if (tall) {
             val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-            col.addView(identity(dp(150f)), LinearLayout.LayoutParams(-1, -2))
+            col.addView(identity(dp(190f)), LinearLayout.LayoutParams(-1, -2))
             col.addView(ratings, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8f) })
             col.addView(look, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8f); bottomMargin = dp(8f) })
             val sv = ScrollView(this).apply { addView(col); isVerticalScrollBarEnabled = false }
             page.addView(sv, LinearLayout.LayoutParams(-1, 0, 1f).apply { topMargin = dp(6f) })
         } else {
             val body = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-            body.addView(identity(0), LinearLayout.LayoutParams(dp(150f), -1))
+            body.addView(identity(0), LinearLayout.LayoutParams(dp(185f), -1))
             body.addView(scrolled(ratings), LinearLayout.LayoutParams(0, -1, 1.1f).apply { leftMargin = dp(8f) })
             body.addView(scrolled(look), LinearLayout.LayoutParams(0, -1, 1f).apply { leftMargin = dp(8f) })
             page.addView(body, LinearLayout.LayoutParams(-1, 0, 1f).apply { topMargin = dp(6f) })
@@ -161,7 +161,7 @@ class GolferActivity : Activity() {
     private fun identity(fixedH: Int): View {
         val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_HORIZONTAL }
         portrait = PortraitView(this).apply { look = p.look.copy() }
-        if (fixedH > 0) col.addView(portrait, LinearLayout.LayoutParams(dp(120f), fixedH))
+        if (fixedH > 0) col.addView(portrait, LinearLayout.LayoutParams(dp(150f), fixedH))
         else col.addView(portrait, LinearLayout.LayoutParams(-1, 0, 1f))
 
         val name = EditText(this).apply {
