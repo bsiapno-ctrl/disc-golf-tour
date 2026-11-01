@@ -148,6 +148,56 @@ object SkinnedLoader {
     private fun map(o: Any?) = o as Map<*, *>
     private fun srgb(c: Float) = c.coerceIn(0f, 1f).pow(1f / 2.2f)
 
+    class Mesh(val pos: FloatArray, val nor: FloatArray, val jn: FloatArray, val wt: FloatArray, val idx: FloatArray)
+
+    /**
+     * One round of midpoint subdivision (every triangle becomes four) with "Phong tessellation": each new vertex is
+     * pulled toward the tangent planes of its two parents, so silhouettes round off instead of staying faceted. Joint
+     * weights are merged and the strongest four kept. Shared edges give identical vertices, so there are no cracks.
+     */
+    fun subdivide(pos: FloatArray, nor: FloatArray, jn: FloatArray, wt: FloatArray, idx: FloatArray, alpha: Float = 0.7f): Mesh {
+        val n = pos.size / 3
+        if (n * 3 > 60000 || idx.size % 3 != 0) return Mesh(pos, nor, jn, wt, idx)
+        val edges = HashMap<Long, Int>()
+        val np = ArrayList<Float>(pos.size * 3); val nn = ArrayList<Float>(pos.size * 3)
+        val nj = ArrayList<Float>(n * 8); val nw = ArrayList<Float>(n * 8)
+        for (v in pos) np += v; for (v in nor) nn += v; for (v in jn) nj += v; for (v in wt) nw += v
+        fun mid(a: Int, b: Int): Int {
+            val lo = min(a, b); val hi = max(a, b)
+            val key = lo.toLong() * 1_000_003L + hi
+            edges[key]?.let { return it }
+            val m = FloatArray(3) { (pos[lo * 3 + it] + pos[hi * 3 + it]) * 0.5f }
+            var ax = 0f; var ay = 0f; var az = 0f
+            for (side in 0..1) {
+                val q = if (side == 0) lo else hi
+                val d = (m[0] - pos[q * 3]) * nor[q * 3] + (m[1] - pos[q * 3 + 1]) * nor[q * 3 + 1] + (m[2] - pos[q * 3 + 2]) * nor[q * 3 + 2]
+                ax += (m[0] - d * nor[q * 3]) * 0.5f; ay += (m[1] - d * nor[q * 3 + 1]) * 0.5f; az += (m[2] - d * nor[q * 3 + 2]) * 0.5f
+            }
+            np += m[0] + (ax - m[0]) * alpha; np += m[1] + (ay - m[1]) * alpha; np += m[2] + (az - m[2]) * alpha
+            var x = nor[lo * 3] + nor[hi * 3]; var y = nor[lo * 3 + 1] + nor[hi * 3 + 1]; var z = nor[lo * 3 + 2] + nor[hi * 3 + 2]
+            val l = 1f / sqrt(max(x * x + y * y + z * z, 1e-9f)); nn += x * l; nn += y * l; nn += z * l
+            // merge the joint weights of both parents, keeping the four strongest
+            val all = ArrayList<Pair<Int, Float>>()
+            for (side in 0..1) { val q = if (side == 0) lo else hi; for (k in 0 until 4) { val w = wt[q * 4 + k] * 0.5f; if (w > 0f) all += jn[q * 4 + k].toInt() to w } }
+            val merged = LinkedHashMap<Int, Float>(); for ((j, w) in all) merged[j] = (merged[j] ?: 0f) + w
+            val top = merged.entries.sortedByDescending { it.value }.take(4)
+            val tot = top.sumOf { it.value.toDouble() }.toFloat().coerceAtLeast(1e-6f)
+            for (k in 0 until 4) { if (k < top.size) { nj += top[k].key.toFloat(); nw += top[k].value / tot } else { nj += 0f; nw += 0f } }
+            val id = np.size / 3 - 1
+            edges[key] = id
+            return id
+        }
+        val out = FloatArray(idx.size * 4)
+        var o = 0
+        var t = 0
+        while (t < idx.size) {
+            val a = idx[t].toInt(); val b = idx[t + 1].toInt(); val c = idx[t + 2].toInt(); t += 3
+            val ab = mid(a, b); val bc = mid(b, c); val ca = mid(c, a)
+            for (v in intArrayOf(a, ab, ca, ab, b, bc, ca, bc, c, ab, bc, ca)) out[o++] = v.toFloat()
+        }
+        return Mesh(np.toFloatArray(), nn.toFloatArray(), nj.toFloatArray(), nw.toFloatArray(), out)
+    }
+
     /** Averages normals of vertices at the same spot (flat-shaded low-poly becomes soft), keeping a little of the original. */
     private fun smoothNormals(pos: FloatArray, nor: FloatArray): FloatArray {
         val sum = HashMap<Long, FloatArray>()
@@ -161,7 +211,7 @@ object SkinnedLoader {
         for (i in 0 until n) {
             val a = sum[key(i)]!!
             val l = 1f / sqrt(max(a[0] * a[0] + a[1] * a[1] + a[2] * a[2], 1e-9f))
-            for (k in 0 until 3) out[i * 3 + k] = nor[i * 3 + k] * 0.15f + a[k] * l * 0.85f
+            for (k in 0 until 3) out[i * 3 + k] = nor[i * 3 + k] * 0.04f + a[k] * l * 0.96f
         }
         return out
     }
@@ -228,9 +278,10 @@ object SkinnedLoader {
             meshNodes += ni
             for (prim in list(map(list(json, "meshes")[(mi as Number).toInt()]), "primitives")) {
                 val p = map(prim); val at = map(p["attributes"])
-                val pos = read(num(at, "POSITION").toInt()); val nor = smoothNormals(pos, read(num(at, "NORMAL").toInt()))
-                val jn = read(num(at, "JOINTS_0").toInt()); val wt = read(num(at, "WEIGHTS_0").toInt())
-                val idx = read(num(p, "indices").toInt())
+                val pos0 = read(num(at, "POSITION").toInt()); val nor0 = smoothNormals(pos0, read(num(at, "NORMAL").toInt()))
+                val sub = subdivide(pos0, nor0, read(num(at, "JOINTS_0").toInt()), read(num(at, "WEIGHTS_0").toInt()), read(num(p, "indices").toInt()))
+                val pos = sub.pos; val nor = sub.nor; val jn = sub.jn; val wt = sub.wt
+                val idx = sub.idx
                 val cnt = pos.size / 3
                 val vb = ByteBuffer.allocateDirect(cnt * 14 * 4).order(ByteOrder.nativeOrder()).asFloatBuffer()
                 for (i in 0 until cnt) {
@@ -293,14 +344,21 @@ class SkinShader {
     private val uCam = GLES30.glGetUniformLocation(prog, "uCamPos")
     private val uFog = GLES30.glGetUniformLocation(prog, "uFogColor")
     private val uOutline = GLES30.glGetUniformLocation(prog, "uOutline")
+    private val uViewport = GLES30.glGetUniformLocation(prog, "uViewport")
     private val uKind = GLES30.glGetUniformLocation(prog, "uKind")
     private val rows = FloatArray(MAX_BONES * 12)
+    private val vp = IntArray(4)
+    private var outlinePx = 2f
 
     fun begin(sun: FloatArray, cx: Float, cy: Float, cz: Float) {
         GLES30.glUseProgram(prog)
         GLES30.glUniform3f(uLight, sun[0], sun[1], sun[2])
         GLES30.glUniform3f(uCam, cx, cy, cz)
         GLES30.glUniform3f(uFog, HORIZON_R, HORIZON_G, HORIZON_B)
+        GLES30.glGetIntegerv(GLES30.GL_VIEWPORT, vp, 0)
+        GLES30.glUniform2f(uViewport, max(vp[2], 1).toFloat(), max(vp[3], 1).toFloat())
+        // A thin clean line: about 0.33% of the screen height, never under 1.5 px.
+        outlinePx = (vp[3] * 0.0033f).coerceIn(1.5f, 4f)
     }
 
     /** [tint] maps a material name to a colour override (r, g, b), or null to keep the model's own. */
@@ -309,20 +367,27 @@ class SkinShader {
         GLES30.glUniform4fv(uBones, min(model.jointCount, MAX_BONES) * 3, rows, 0)
         GLES30.glUniformMatrix4fv(uMvp, 1, false, mvp, 0)
         GLES30.glUniformMatrix4fv(uModel, 1, false, world, 0)
-        // Cartoon outline: the model pushed out along its normals, back faces only, in near-black.
+        // Cartoon outline: the model's back faces pushed outward on screen by a fixed number of pixels, in dark navy-brown.
+        // A mirrored model (right-handers) flips the triangle winding, so say which way is "front".
+        val det = world[0] * (world[5] * world[10] - world[6] * world[9]) - world[4] * (world[1] * world[10] - world[2] * world[9]) +
+            world[8] * (world[1] * world[6] - world[2] * world[5])
+        GLES30.glFrontFace(if (det < 0f) GLES30.GL_CCW else GLES30.GL_CW)
         GLES30.glEnable(GLES30.GL_CULL_FACE); GLES30.glCullFace(GLES30.GL_FRONT)
-        GLES30.glUniform1f(uOutline, 0.020f)
-        for (p in model.parts) { GLES30.glBindVertexArray(p.vao); GLES30.glDrawElements(GLES30.GL_TRIANGLES, p.count, GLES30.GL_UNSIGNED_SHORT, 0) }
-        GLES30.glDisable(GLES30.GL_CULL_FACE)
+        GLES30.glUniform1f(uOutline, outlinePx)
+        for (p in model.parts) {
+            if (p.material == "Eye") continue
+            GLES30.glBindVertexArray(p.vao); GLES30.glDrawElements(GLES30.GL_TRIANGLES, p.count, GLES30.GL_UNSIGNED_SHORT, 0)
+        }
+        GLES30.glDisable(GLES30.GL_CULL_FACE); GLES30.glFrontFace(GLES30.GL_CCW)
         GLES30.glUniform1f(uOutline, 0f)
         for (p in model.parts) {
+            if (p.material == "Eye") continue   // the eyes are painted on the face in the shader
             val over = tint(p.material)
             val c = over ?: p.color
             // What the surface is, so the shader can shade skin, hair, cloth and shoes differently.
             val kind = when {
                 p.material.startsWith("Skin") -> 2f
                 p.material == "Hair" || p.material == "Eyebrows" -> 3f
-                p.material == "Eye" -> 4f
                 over != null -> 1f
                 else -> 0f
             }
@@ -344,10 +409,11 @@ layout(location = 3) in vec4 aWeight;
 uniform mat4 uMVP;
 uniform mat4 uModel;
 uniform vec4 uBones[192];
-uniform float uOutline;
-uniform vec3 uCamPos;
+uniform float uOutline;      // outline width in pixels (0 = normal pass)
+uniform vec2 uViewport;
 out vec3 vNormal;
 out vec3 vWorld;
+out vec3 vRest;
 out float vLocalY;
 vec3 skinPos(vec3 p, vec3 n, out vec3 sn) {
     vec4 p4 = vec4(p, 1.0);
@@ -365,19 +431,29 @@ vec3 skinPos(vec3 p, vec3 n, out vec3 sn) {
 void main() {
     vec3 sn;
     vec3 p = skinPos(aPos, aNormal, sn);
-    float cd = length((uModel * vec4(p, 1.0)).xyz - uCamPos);
-    p += normalize(sn) * uOutline * clamp(0.55 + 0.09 * cd, 0.7, 1.8);
+    vec3 nrm = normalize(sn);
+    vec4 c = uMVP * vec4(p, 1.0);
+    if (uOutline > 0.0) {
+        // Push the vertex sideways on screen by a fixed pixel width, along the projected normal: even line at any distance.
+        vec4 c2 = uMVP * vec4(p + nrm * 0.03, 1.0);
+        vec2 d = (c2.xy / c2.w - c.xy / c.w) * uViewport;
+        float dl = length(d);
+        d = dl > 1e-4 ? d / dl : vec2(0.0);
+        c.xy += d * (uOutline * 2.0 / uViewport) * c.w;
+    }
     vec4 w = uModel * vec4(p, 1.0);
     vWorld = w.xyz;
+    vRest = aPos;
     vLocalY = w.y - uModel[3].y;            // height above the golfer's feet
     vNormal = normalize(mat3(uModel) * sn);
-    gl_Position = uMVP * vec4(p, 1.0);
+    gl_Position = c;
 }
 """
         private const val FRAG = """#version 300 es
 precision highp float;
 in vec3 vNormal;
 in vec3 vWorld;
+in vec3 vRest;
 in float vLocalY;
 uniform float uKind;
 uniform vec3 uColor;
@@ -386,53 +462,78 @@ uniform vec3 uCamPos;
 uniform vec3 uFogColor;
 uniform float uOutline;
 out vec4 fragColor;
+
+float ell(vec2 p, vec2 c, vec2 r) { vec2 q = (p - c) / r; return 1.0 - dot(q, q); }
+
 void main() {
-    if (uOutline > 0.0) { fragColor = vec4(0.11, 0.06, 0.14, 1.0); return; }
+    if (uOutline > 0.0) { fragColor = vec4(0.13, 0.09, 0.13, 1.0); return; }
     vec3 n = normalize(vNormal);
-    if (!gl_FrontFacing) n = -n;
+    vec3 L = normalize(uLightDir);
     // Brighter, more saturated than the model's own colours.
     float lum0 = dot(uColor, vec3(0.30, 0.59, 0.11));
-    vec3 base = min(mix(vec3(lum0), uColor, 1.40) * 1.14, vec3(1.0));
-    float wrap = dot(n, normalize(uLightDir)) * 0.5 + 0.5;
-    // Toon ramp: deep cool shade, soft mid band, bright lit band.
+    vec3 base = min(mix(vec3(lum0), uColor, 1.35) * 1.12, vec3(1.0));
     bool skin = uKind > 1.5 && uKind < 2.5;
     bool hair = uKind > 2.5 && uKind < 3.5;
     bool cloth = uKind > 0.5 && uKind < 1.5;
-    // Skin shades warm and rosy; everything else shades cool.
-    vec3 c0 = base * (skin ? vec3(0.80, 0.60, 0.64) : vec3(0.62, 0.58, 0.88));
-    vec3 c1 = base * (skin ? vec3(0.94, 0.84, 0.84) : vec3(0.80, 0.80, 0.96));
-    vec3 c2 = base * vec3(1.14, 1.08, 0.96);
-    vec3 lit = mix(c0, c1, smoothstep(0.26, 0.34, wrap));
-    lit = mix(lit, c2, smoothstep(0.58, 0.68, wrap));
-    lit *= mix(vec3(0.86, 0.86, 0.80), vec3(0.98, 1.02, 1.10), n.y * 0.5 + 0.5);   // sky / ground hemisphere
+    float wrap = dot(n, L) * 0.5 + 0.5;
+    // Three flat bands with soft edges: a cool shadow, a neutral middle and a warm key-lit top.
+    vec3 sh  = base * (skin ? vec3(0.76, 0.56, 0.62) : vec3(0.56, 0.58, 0.86)) + vec3(0.015, 0.03, 0.08);
+    vec3 mid = base * (skin ? vec3(0.95, 0.85, 0.85) : vec3(0.86, 0.88, 0.98));
+    vec3 key = base * vec3(1.12, 1.04, 0.90);
+    vec3 lit = mix(sh, mid, smoothstep(0.30, 0.38, wrap));
+    lit = mix(lit, key, smoothstep(0.62, 0.70, wrap));
+    // Cool sky fill from above, warm bounce from the grass below: undersides (arms, chin, hem) sit darker.
+    lit *= mix(vec3(0.74, 0.77, 0.74), vec3(1.0, 1.02, 1.08), smoothstep(-0.7, 0.5, n.y));
+    // Cheap occlusion: surfaces facing down or sideways near the body and the ground read as tucked in.
+    float ao = mix(0.78, 1.0, smoothstep(-0.2, 0.6, n.y)) * mix(0.84, 1.0, smoothstep(0.0, 0.40, vLocalY));
+    lit *= ao;
     // Cloth: fine weave bands, a softly darker hem and underarm, brighter shoulders.
     if (cloth) {
-        lit *= 1.0 - 0.045 * smoothstep(0.35, 0.65, sin(vLocalY * 120.0) * 0.5 + 0.5);
-        lit *= mix(0.90, 1.06, smoothstep(0.60, 1.50, vLocalY));
+        lit *= 1.0 - 0.04 * smoothstep(0.35, 0.65, sin(vLocalY * 120.0) * 0.5 + 0.5);
+        lit *= mix(0.90, 1.05, smoothstep(0.60, 1.50, vLocalY));
         lit *= 1.0 - 0.10 * (1.0 - smoothstep(0.0, 0.05, abs(vLocalY - 0.78)));     // waistband line
     }
-    // Hair: a glossy band of light across the crown.
+    // Hair: a glossy band of light across the crown, darker toward the nape.
     if (hair) {
-        vec3 hv = normalize(normalize(uLightDir) + normalize(uCamPos - vWorld));
+        vec3 hv = normalize(L + normalize(uCamPos - vWorld));
         lit += vec3(1.0, 0.95, 0.85) * smoothstep(0.84, 0.90, dot(n, hv)) * 0.30;
+        lit *= mix(0.74, 1.0, smoothstep(1.50, 1.70, vLocalY));
     }
-    // Hair settles darker toward the nape so the cap of hair reads against the neck; headwear keeps its colour.
-    if (hair) lit *= mix(0.74, 1.0, smoothstep(1.50, 1.70, vLocalY));
-    // Skin: a soft shadow under the chin and hairline, and warmer, rosier hands and forearms than the face.
     if (skin) {
-        lit *= 1.0 - 0.16 * smoothstep(1.36, 1.44, vLocalY) * (1.0 - smoothstep(1.50, 1.58, vLocalY));
+        // Shadow under the chin and hairline, rosier hands and forearms than the face.
+        lit *= 1.0 - 0.18 * smoothstep(1.36, 1.44, vLocalY) * (1.0 - smoothstep(1.50, 1.58, vLocalY));
         lit *= mix(vec3(1.05, 0.95, 0.93), vec3(1.0), smoothstep(0.80, 1.05, vLocalY));
+        // Painted face (the model has no texture): eyes with highlights, a small smile, rosy cheeks. Rest-pose coordinates.
+        if (vRest.y > 1.44 && vRest.z > 0.05 && abs(vRest.x) < 0.16) {
+            vec2 f = vec2(abs(vRest.x), vRest.y);
+            float aa = 0.0035;
+            lit = mix(lit, lit * vec3(1.06, 0.84, 0.84), 0.55 * smoothstep(0.0, 0.5, ell(f, vec2(0.075, 1.642), vec2(0.026, 0.016))));   // cheeks
+            // eyes
+            float e = ell(f, vec2(0.050, 1.684), vec2(0.021, 0.027));
+            vec3 eyeCol = vec3(0.10, 0.07, 0.12);
+            eyeCol = mix(eyeCol, vec3(0.30, 0.20, 0.16), smoothstep(0.1, 0.9, ell(f, vec2(0.050, 1.672), vec2(0.017, 0.015))) * 0.7);   // warm lower iris
+            lit = mix(lit, eyeCol, smoothstep(0.0, 0.14, e));
+            float hl1 = ell(f, vec2(0.056, 1.692), vec2(0.0082, 0.0090));
+            float hl2 = ell(f, vec2(0.043, 1.668), vec2(0.0042, 0.0046));
+            lit = mix(lit, vec3(1.0), max(smoothstep(0.0, 0.25, hl1), smoothstep(0.0, 0.3, hl2) * 0.85));
+            // upper lash line
+            float lash = smoothstep(0.0, 0.06, e) * (1.0 - smoothstep(0.0, 0.06, ell(f, vec2(0.050, 1.693), vec2(0.024, 0.028))));
+            lit = mix(lit, vec3(0.08, 0.05, 0.09), lash * 0.9);
+            // mouth: a small smile arc
+            float my = 1.608 + 13.0 * vRest.x * vRest.x;
+            float mouth = (1.0 - smoothstep(0.0024, 0.0042, abs(vRest.y - my))) * (1.0 - smoothstep(0.024, 0.030, abs(vRest.x)));
+            lit = mix(lit, vec3(0.50, 0.18, 0.20), mouth * 0.9);
+        }
     }
-    // Shoes and feet: darker soles with a pale band above, and a little ground bounce shade on the lower legs.
+    // Shoes and feet: darker soles with a pale band above.
     if (!cloth && !hair && !skin) {
         lit *= mix(0.55, 1.0, smoothstep(0.015, 0.045, vLocalY));
         lit += vec3(0.10) * (1.0 - smoothstep(0.045, 0.065, abs(vLocalY - 0.055)));
     }
-    lit *= mix(0.88, 1.0, smoothstep(0.0, 0.45, vLocalY));
     vec3 vdir = normalize(uCamPos - vWorld);
     float f = 1.0 - max(dot(n, vdir), 0.0);
-    float rim = smoothstep(0.52, 0.80, f);
-    lit += mix(vec3(0.55, 0.75, 1.0), vec3(1.0, 0.92, 0.70), smoothstep(0.3, 0.7, wrap)) * rim * (hair ? 0.18 : 0.42);
+    float rim = smoothstep(0.58, 0.86, f);
+    lit += mix(vec3(0.55, 0.75, 1.0), vec3(1.0, 0.92, 0.70), smoothstep(0.3, 0.7, wrap)) * rim * (hair ? 0.14 : 0.30);
     float d = length(vWorld - uCamPos);
     fragColor = vec4(mix(lit, uFogColor, smoothstep($FOG_START, $FOG_END, d)), 1.0);
 }
