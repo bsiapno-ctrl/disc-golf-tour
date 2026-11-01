@@ -33,6 +33,24 @@ class SkinnedGolfer(private val context: Context) {
         "Worker" to Roles(emptySet(), setOf("Brown"), setOf("Hair")),
     )
 
+    private fun acc(hex: Int, kind: Float) = rgb(hex) + kind   // [r, g, b, surface kind]: 0 = plain, 1 = cloth, 5 = shoe
+
+    /**
+     * Each character's own colours for the parts the creator does not recolour (shoes, hats, vests, trims), so the six
+     * read as six different people at a glance even before shirt and shorts are chosen.
+     */
+    private val accents: Map<String, Map<String, FloatArray>> = mapOf(
+        "Casual2" to mapOf("Red_Dark" to acc(0xFF5C7A, 5f)),                                    // coral-pink trainers
+        "Beach" to mapOf("White" to acc(0x20D8D0, 1f), "Earrings" to acc(0xFFC93C, 0f)),         // turquoise stripes on the shorts
+        "Adventurer" to mapOf("LightGreen" to acc(0xF2C94C, 1f), "Grey" to acc(0xA8672F, 5f), "Black" to acc(0x4E2E18, 5f),
+            "Brown2" to acc(0x8C5A2B, 1f)),                                                   // mustard trim, tan hiking boots
+        "Punk" to mapOf("Black" to acc(0x4B2A8C, 1f), "Earrings" to acc(0xFFC93C, 0f)),          // violet vest
+        "Worker" to mapOf("Worker_Yellow" to acc(0xFFC21A, 0f), "Worker_Vest" to acc(0xFF6A14, 1f), "LightBrown" to acc(0x7FA0C8, 1f),
+            "Grey" to acc(0xB06E36, 5f), "Black" to acc(0x4A3020, 5f), "Brown2" to acc(0x5A7090, 1f)),   // hard hat, hi-vis, work boots
+    )
+    /** Casual's trainers share the hoodie's material; this paints them. */
+    private val shoeFor: Map<String, FloatArray> = mapOf("Casual" to rgb(0xF4F1EA))
+
     fun nameFor(look: Appearance) = characters[look.hairStyle.coerceIn(0, characters.size - 1)]
 
     private fun model(name: String) = models.getOrPut(name) { SkinnedLoader.load(context, name) }
@@ -86,6 +104,8 @@ class SkinnedGolfer(private val context: Context) {
         val shortsC = rgb(Appearance.SHORTS[look.shortsColor.coerceIn(0, Appearance.SHORTS_COUNT - 1)])
         val r = roles[name]
         shader.begin(sun, camX, camY, camZ)
+        shader.setShoe(shoeFor[name])
+        val acs = accents[name]
         shader.draw(m, mvp, tmpWorld) { mat ->
             when {
                 mat == "Skin" -> skin
@@ -94,7 +114,7 @@ class SkinnedGolfer(private val context: Context) {
                 r != null && mat in r.hair -> hairC
                 r != null && mat in r.shirt -> shirtC
                 r != null && mat in r.shorts -> shortsC
-                else -> null
+                else -> acs?.get(mat)
             }
         }
 

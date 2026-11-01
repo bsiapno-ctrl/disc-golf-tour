@@ -56,6 +56,7 @@ float fbm(vec2 p) {
     return v;
 }
 
+$GRADE_GLSL
 void main() {
     vec3 ray = normalize(vWorldFar - uCamPos);
     float up = clamp(ray.y, 0.0, 1.0);
@@ -67,7 +68,10 @@ void main() {
 
     vec3 sun = normalize(uSunDir);
     float s = max(dot(ray, sun), 0.0);
-    col += vec3(1.0, 0.92, 0.75) * (pow(s, 900.0) * 1.4 + pow(s, 40.0) * 0.26 + pow(s, 7.0) * 0.16 + pow(s, 2.0) * 0.05);   // sun and soft bloom
+    // Sun: a bright disc with a thin soft edge, a tight halo and a wide warm bloom.
+    float sunDisc = smoothstep(0.99955, 0.99975, s);
+    col += vec3(1.0, 0.95, 0.80) * sunDisc * 1.6;
+    col += vec3(1.0, 0.88, 0.62) * (pow(s, 220.0) * 0.45 + pow(s, 40.0) * 0.30 + pow(s, 7.0) * 0.18 + pow(s, 2.0) * 0.06);
     col += vec3(1.0, 0.95, 0.85) * 0.16 * (1.0 - smoothstep(0.0, 0.20, up));   // glowing horizon
 
     // Clouds, two stylised layers of fluffy cumulus: a high thin one and a nearer, puffier one. Each is a noise
@@ -93,19 +97,44 @@ void main() {
     // Distant hills and a tree line, three layers fading into the haze. Only drawn just above the horizon.
     if (ray.y < 0.30) {
         float az = atan(ray.x, ray.z);
-        for (int k = 0; k < 2; k++) {
+        for (int k = 0; k < 3; k++) {
             float fk = float(k);
-            float base = 0.15 - 0.040 * fk;
-            float amp = 0.17 - 0.06 * fk;
-            float freq = 2.2 + 2.6 * fk;
+            float base = 0.17 - 0.034 * fk;
+            float amp = 0.17 - 0.045 * fk;
+            float freq = 2.0 + 2.3 * fk;
             float h = base + amp * (fbm(vec2(az * freq + fk * 9.0, fk * 3.1)) - 0.25);
             float edge = smoothstep(h + 0.0015, h - 0.0015, ray.y);
-            vec3 far = vec3(0.58, 0.74, 0.92);
-            vec3 mid = vec3(0.34, 0.64, 0.56);
-            vec3 rc = k == 0 ? far : mid;
-            float shade = 0.80 + 0.30 * smoothstep(0.0, h, ray.y);   // lighter toward the ridge top
-            rc = mix(rc, horizon, 0.38 - 0.16 * fk * 1.0 - 0.1 * smoothstep(0.0, h, ray.y));   // haze, thicker far away and low down
-            col = mix(col, rc * shade, edge * (ray.y > -0.02 ? 1.0 : 0.0));
+            vec3 far = vec3(0.60, 0.74, 0.94);
+            vec3 mid = vec3(0.42, 0.68, 0.66);
+            vec3 near = vec3(0.30, 0.60, 0.40);
+            vec3 rc = k == 0 ? far : (k == 1 ? mid : near);
+            float up01 = smoothstep(0.0, h, ray.y);
+            float shade = 0.80 + 0.30 * up01;   // lighter toward the ridge top
+            // Forest texture: speckled canopy that darkens in clumps, sunlit on the ridge, fading with distance (layer 0 is mostly mist).
+            float forest = vnoise(vec2(az * (55.0 + 25.0 * fk), ray.y * (85.0 + 35.0 * fk)));
+            float clump = fbm(vec2(az * 14.0 + fk * 5.0, ray.y * 22.0));
+            shade *= 1.0 + (forest - 0.5) * (0.10 + 0.10 * fk) + (clump - 0.5) * 0.16;
+            rc = mix(rc, horizon, 0.46 - 0.16 * fk - 0.10 * up01);   // mist, thicker far away and low down
+            float lowMist = 1.0 - smoothstep(0.0, 0.06 + 0.02 * fk, ray.y);
+            rc = mix(rc * shade, horizon, lowMist * (0.55 - 0.12 * fk));
+            col = mix(col, rc, edge * (ray.y > -0.02 ? 1.0 : 0.0));
+        }
+    }
+    // A few birds: little animated V-shapes (wings flapping) drifting across the sky.
+    if (ray.y > 0.07 && ray.y < 0.45) {
+        float baz = atan(ray.x, ray.z);
+        float bel = asin(clamp(ray.y, 0.0, 1.0));
+        for (int b = 0; b < 6; b++) {
+            float fb = float(b);
+            float a0 = fb * 1.047 + 0.4 * sin(fb * 2.3);
+            float ba = a0 + uTime * (0.012 + 0.003 * fb);
+            float be = 0.20 + 0.11 * fract(fb * 0.37 + 0.13) + 0.012 * sin(uTime * 0.7 + fb);
+            vec2 q = vec2(mod(baz - ba + 3.14159, 6.28318) - 3.14159, bel - be) * 20.0;
+            float flap = sin(uTime * (7.0 + fb) + fb * 1.7);
+            float wing = abs(q.x);
+            float yy = -wing * (0.30 + 0.35 * flap) + 0.10 * wing * wing;
+            float bird = (1.0 - smoothstep(0.020, 0.050, abs(q.y - yy))) * (1.0 - smoothstep(0.70, 0.95, wing));
+            col = mix(col, vec3(0.16, 0.20, 0.30), bird * 0.85);
         }
     }
     // Two tree lines in front of the hills: rows of round treetops (scallops of varied size), the far row hazier and paler.
@@ -133,7 +162,7 @@ void main() {
             col = mix(col, tc, edge * (ray.y > -0.02 ? 1.0 : 0.0));
         }
     }
-    fragColor = vec4(col, 1.0);
+    fragColor = vec4(grade(col), 1.0);
 }
 """
     }

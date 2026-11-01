@@ -82,6 +82,7 @@ float vnoise(vec2 p) {
     f = f * f * (3.0 - 2.0 * f);
     return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), f.x), mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), f.x), f.y);
 }
+$GRADE_GLSL
 void main() {
     vec2 w = vWorld.xz;
     float r = length(vLocal.xz);
@@ -124,7 +125,7 @@ void main() {
     col = mix(col, vec3(0.97, 1.0, 1.0), clamp(foam + line * 0.7, 0.0, 0.95));
     float alpha = (0.90 - 0.12 * depth) * (1.0 - smoothstep(0.955, 1.0, r)) + foam * 0.1;
     float fog = smoothstep($FOG_START, $FOG_END, dist);
-    fragColor = vec4(mix(col, vec3($HORIZON_R, $HORIZON_G, $HORIZON_B), fog), alpha);
+    fragColor = vec4(grade(mix(col, vec3($HORIZON_R, $HORIZON_G, $HORIZON_B), fog)), alpha);
 }
 """
     }

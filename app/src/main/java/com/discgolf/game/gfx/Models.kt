@@ -233,6 +233,7 @@ uniform float uLeaf;
 uniform vec3 uLeafDark;
 uniform vec3 uLeafLight;
 out vec4 fragColor;
+$GRADE_GLSL
 void main() {
     vec4 t = texture(uTex, vUv);
     if (t.a < 0.45) discard;
@@ -261,7 +262,7 @@ void main() {
     lit = mix(vec3(lm), lit, 1.22);                               // richer colour
     float d = length(vWorld - uCamPos);
     float fogAmt = smoothstep($FOG_START, $FOG_END, d);
-    fragColor = vec4(mix(lit, uFogColor, fogAmt), 1.0);
+    fragColor = vec4(grade(mix(lit, uFogColor, fogAmt)), 1.0);
 }
 """
     }
