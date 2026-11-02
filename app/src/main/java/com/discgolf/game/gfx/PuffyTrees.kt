@@ -8,7 +8,7 @@ import java.nio.ByteOrder
 class TreeMesh(val vao: Int, val vbo: Int, val ebo: Int, val count: Int)
 
 /**
- * Draws the round, puffy trees. Six shapes in three levels of detail are built once and shared by every tree; the
+ * Draws the round, puffy trees. Nine shapes in three levels of detail are built once and shared by every tree; the
  * colour family (fresh green, yellow-green, blossom) and bark (brown or birch-white) are uniforms.
  */
 class PuffyTrees {
@@ -90,12 +90,28 @@ class PuffyTrees {
         fun species(idx: Int, variant: Int, nearWater: Boolean): Int {
             if (nearWater && idx % 2 == 0) return 6 or (5 shl 4)
             val oak = idx % 4
+            val spruce = 8 or (4 shl 4)
             return when {
                 variant == 2 -> oak or ((if (idx % 2 == 0) 2 else 3) shl 4)
-                variant == 0 -> if (idx % 3 == 0) 5 or (4 shl 4) else oak or ((if (idx % 5 == 1) 1 else 0) shl 4)
+                variant == 0 -> if (idx % 3 == 0) (if (idx % 2 == 0) 5 or (4 shl 4) else spruce) else oak or ((if (idx % 5 == 1) 1 else 0) shl 4)
+                idx % 13 == 5 -> spruce
                 idx % 2 == 0 -> 4 or ((if (idx % 3 == 0) 1 else 0) shl 4) or (1 shl 8)
                 else -> (idx / 2) % 4 or ((if (idx % 7 == 1) 1 else 0) shl 4)
             }
+        }
+
+        /** Height multiplier for tree [idx] of species [seed]: most trees vary a little, a few are veterans, spruces run tall. Mirrored in pv.js. */
+        fun heightJit(idx: Int, seed: Int): Float {
+            val j = 0.80f + ((idx * 29) % 41) / 100f             // 0.80 .. 1.20
+            val big = if (idx % 17 == 3) 1.22f else 1f
+            return j * big * (if (seed == 8) 1.12f else 1f)
+        }
+
+        /** Width multiplier: independent of height so trees are not all the same shape. */
+        fun widthJit(idx: Int, seed: Int): Float {
+            val j = 0.88f + ((idx * 53) % 25) / 100f             // 0.88 .. 1.12
+            val big = if (idx % 17 == 3) 1.15f else 1f
+            return j * big * (if (seed == 8) 0.80f else if (seed == 5) 0.85f else 1f)
         }
 
         private const val VERT = """#version 300 es

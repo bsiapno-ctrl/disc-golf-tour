@@ -7,3 +7,5 @@ Renders the game's real shaders, glTF models and skinned golfer in headless Chro
 3. `node pv.js <hole> tee 1280 600 out.png Casual` (env `CAM=back,right,height,ahead,lookHeight`, `FOV`, `CLIP=Windup_BH,0` clip and 0..1 time for the pose).
 
 Shade map: the preview mirrors TerrainRender's baked tree-shadow texture (trunk size assumed). Trees: `ExportTrees.kt` + `gfx/PuffyTreeGen.kt` (pure Kotlin) write `trees.json` (`ExportTreesKt > trees.json`), which `pv.js` reads from the working directory, so the preview draws the exact tree meshes the game builds. Env `ASSETS` / `GFX_SRC` override the asset and Kotlin source paths.
+
+gfx8: `Export.kt` now writes the real `Scenery.decorFor` items (rocks, shrubs, signs, stakes); `pv.js` ports the basket, flag, tee pad props and shrubs.

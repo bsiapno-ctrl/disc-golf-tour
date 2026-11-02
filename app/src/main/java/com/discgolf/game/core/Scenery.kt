@@ -4,8 +4,12 @@ import java.util.Random
 
 /** Non-colliding set dressing around a hole: bushes, flower patches, grass, rocks and fallen logs. Pure, so tools can reuse it. */
 object Scenery {
-    /** [model] is a glTF name, or "@rock" for a procedural boulder. [lie] > 0 means a log lying on its side, in degrees of roll. */
-    class Item(val model: String, val x: Float, val z: Float, val scale: Float, val rot: Float, val tint: Float, val lie: Float = 0f)
+    /**
+     * [model] is a glTF name, or "@rock" (procedural boulder), "@shrub" (round puffy bush), "@sign" (hole marker post) or
+     * "@stake" (hazard stake). [lie] > 0 means a log lying on its side, in degrees of roll. [kind] picks a variant:
+     * rock colour 0..2, shrub foliage family (0-1 green, 2-3 blossom), stake colour 0 red / 1 yellow.
+     */
+    class Item(val model: String, val x: Float, val z: Float, val scale: Float, val rot: Float, val tint: Float, val lie: Float = 0f, val kind: Int = 0)
 
     private val bushes = arrayOf("Bush", "Bush_Large", "Bush_Flowers", "Bush_Large_Flowers")
     private val flowers = arrayOf("Flower_1_Clump", "Flower_2_Clump", "Flower_3_Clump", "Flower_4_Clump", "Flower_5_Clump")
@@ -37,6 +41,11 @@ object Scenery {
                 val a = rnd.nextFloat() * 6.283f; val r = rnd.nextFloat() * (if (bed) 2.2f else 3f)
                 val x = cx + kotlin.math.cos(a) * r; val z = cz + kotlin.math.sin(a) * r
                 if (!ok(x, z)) continue
+                if (!bed && rnd.nextFloat() < 0.55f) {   // a puffy round shrub in place of a modelled bush
+                    val k = if (rnd.nextFloat() < 0.22f) 2 + rnd.nextInt(2) else rnd.nextInt(2)
+                    out += Item("@shrub", x, z, 0.9f + rnd.nextFloat() * 0.9f, rnd.nextFloat() * 360f, 0.88f + rnd.nextFloat() * 0.24f, kind = k)
+                    continue
+                }
                 val model = if (bed) (if (rnd.nextFloat() < 0.8f) kind else flowers[rnd.nextInt(flowers.size)]) else bushes[rnd.nextInt(bushes.size)]
                 out += Item(model, x, z, (if (bed) 0.9f else 0.65f) + rnd.nextFloat() * (if (bed) 0.9f else 0.6f), rnd.nextFloat() * 360f, 0.85f + rnd.nextFloat() * 0.3f)
             }
@@ -61,7 +70,7 @@ object Scenery {
             if (h.surfaceAt(x, z) == Surface.WATER || h.sandAt(x, z)) return@repeat
             if (h.distToPath(x, z) < h.fairwayWidth * 0.5f - 1f) return@repeat
             if (h.trees.any { val dx = it.x - x; val dz = it.z - z; dx * dx + dz * dz < 4f }) return@repeat
-            if (it % 3 == 0) out += Item("@rock", x, z, 0.5f + rnd.nextFloat() * 0.7f, rnd.nextFloat() * 360f, 0.9f)
+            if (it % 3 == 0) out += Item("@rock", x, z, 0.5f + rnd.nextFloat() * 0.7f, rnd.nextFloat() * 360f, 0.9f, kind = rnd.nextInt(3))
             else out += Item(if (it % 3 == 1) "Grass_Large" else bushes[rnd.nextInt(bushes.size)], x, z, 0.9f + rnd.nextFloat() * 0.6f, rnd.nextFloat() * 360f, 1f)
         }
         // Rocks, in twos and threes, and the odd fallen log.
@@ -69,12 +78,29 @@ object Scenery {
             val (cx, cz) = around(rnd.nextFloat() * h.length, 2.5f, 13f)
             repeat(1 + rnd.nextInt(3)) {
                 val x = cx + (rnd.nextFloat() - 0.5f) * 3f; val z = cz + (rnd.nextFloat() - 0.5f) * 3f
-                if (ok(x, z, 2f)) out += Item("@rock", x, z, 0.35f + rnd.nextFloat() * rnd.nextFloat() * 1.1f, rnd.nextFloat() * 360f, 0.85f + rnd.nextFloat() * 0.3f)
+                if (ok(x, z, 2f)) out += Item("@rock", x, z, 0.35f + rnd.nextFloat() * rnd.nextFloat() * 1.1f, rnd.nextFloat() * 360f, 0.85f + rnd.nextFloat() * 0.3f, kind = rnd.nextInt(3))
             }
         }
         repeat((h.length / 70f).toInt().coerceIn(1, 3)) {
             val (x, z) = around(rnd.nextFloat() * h.length, 4f, 14f)
             if (ok(x, z, 4f)) out += Item(dead[rnd.nextInt(dead.size)], x, z, 0.28f + rnd.nextFloat() * 0.12f, rnd.nextFloat() * 360f, 0.9f, lie = 82f + rnd.nextFloat() * 10f)
+        }
+        // Marker posts beside the fairway, a third and two thirds of the way along, turned to face back at the tee.
+        for (f in floatArrayOf(0.34f, 0.67f)) {
+            val (p, d) = h.pointAt(h.length * f)
+            val side = if (rnd.nextBoolean()) 1f else -1f
+            val off = h.fairwayWidth * 0.5f + 1.3f
+            val x = p.x + d.z * off * side; val z = p.z - d.x * off * side
+            if (ok(x, z, 2f)) out += Item("@sign", x, z, 1f, Math.toDegrees(Math.atan2(-d.x.toDouble(), -d.z.toDouble())).toFloat(), 1f, kind = if (f < 0.5f) 0 else 1)
+        }
+        // Hazard stakes at the near and far bank of each pond.
+        for (pd in h.ponds) for (k in 0 until 4) {
+            val a = (k * 1.571f + 0.6f + pd.cx * 0.1f)
+            val x = pd.cx + kotlin.math.cos(a) * (pd.rx + 1.1f); val z = pd.cz + kotlin.math.sin(a) * (pd.rz + 1.1f)
+            if (h.surfaceAt(x, z) == Surface.WATER || h.sandAt(x, z)) continue
+            if (h.distToPath(x, z) < h.fairwayWidth * 0.5f - 1.5f) continue
+            if (h.trees.any { val dx = it.x - x; val dz = it.z - z; dx * dx + dz * dz < 4f }) continue
+            out += Item("@stake", x, z, 1f, a * 57.3f, 1f, kind = 0)
         }
         return out
     }

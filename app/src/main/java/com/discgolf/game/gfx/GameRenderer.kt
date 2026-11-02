@@ -276,6 +276,16 @@ class GameRenderer(private val context: android.content.Context, private val ctl
         draw(meshes.cube, xf(t.x, t.y + 0.015f, t.z, 1.55f, 0.05f, 2.85f, dir0), 0.40f, 0.29f, 0.17f)   // timber frame
         draw(meshes.cube, xf(t.x, t.y + 0.03f, t.z, 1.28f, 0.05f, 2.58f, dir0), 0.30f, 0.38f, 0.33f)    // pad
         draw(meshes.cube, xf(t.x, t.y + 0.056f, t.z - 0.0f, 1.28f, 0.004f, 0.10f, dir0), 0.92f, 0.92f, 0.88f)  // throwing line
+        // Rubber texture: two lighter inlaid strips along the pad, and a short post at each timber corner.
+        for (side in intArrayOf(-1, 1)) {
+            draw(meshes.cube, xf(t.x + rx * 0.40f * side, t.y + 0.056f, t.z + rz * 0.40f * side, 0.14f, 0.004f, 2.30f, dir0), 0.36f, 0.45f, 0.39f)
+            for (end in intArrayOf(-1, 1)) {
+                val cx = t.x + rx * 0.78f * side + ux * 1.43f * end; val cz = t.z + rz * 0.78f * side + uz * 1.43f * end
+                val cy = h.groundAt(cx, cz)
+                draw(meshes.cyl, xf(cx, cy, cz, 0.065f, 0.20f, 0.065f), 0.36f, 0.26f, 0.15f)
+                draw(meshes.sphere, xf(cx, cy + 0.21f, cz, 0.07f, 0.045f, 0.07f), 0.50f, 0.37f, 0.22f)
+            }
+        }
         // White tee markers at the front corners, each a squashed ball on a little wooden foot.
         for (side in intArrayOf(-1, 1)) {
             val mx = t.x + ux * 1.22f + rx * 0.72f * side; val mz = t.z + uz * 1.22f + rz * 0.72f * side
@@ -286,7 +296,7 @@ class GameRenderer(private val context: android.content.Context, private val ctl
         // Sign: post and board, to the golfer's right.
         val sx = t.x + rx * 1.35f - ux * 0.4f; val sz = t.z + rz * 1.35f - uz * 0.4f
         val sy = h.groundAt(sx, sz)
-        draw(meshes.cyl, xf(sx, sy, sz, 0.035f, 1.05f, 0.035f), 0.36f, 0.26f, 0.15f)
+        draw(meshes.cyl, xf(sx, sy, sz, 0.035f, 0.80f, 0.035f), 0.36f, 0.26f, 0.15f)
         val bc = when (h.par) { 3 -> floatArrayOf(0.20f, 0.62f, 0.34f); 4 -> floatArrayOf(0.20f, 0.45f, 0.80f); else -> floatArrayOf(0.80f, 0.25f, 0.22f) }
         draw(meshes.cube, xf(sx, sy + 0.92f, sz, 0.56f, 0.32f, 0.04f, dir0 + 180f), 0.93f, 0.92f, 0.86f)
         draw(meshes.cube, xf(sx, sy + 1.10f, sz, 0.62f, 0.035f, 0.10f, dir0 + 180f), 0.40f, 0.29f, 0.17f)    // little roof
@@ -299,6 +309,8 @@ class GameRenderer(private val context: android.content.Context, private val ctl
         }
     }
 
+
+    private val ROCK_TONES = arrayOf(floatArrayOf(0.54f, 0.52f, 0.47f), floatArrayOf(0.58f, 0.54f, 0.47f), floatArrayOf(0.45f, 0.49f, 0.54f))
 
     private fun treeScale(t: com.discgolf.game.core.Tree) = t.height * 0.95f
     private fun treeWiden(t: com.discgolf.game.core.Tree) = (t.canopyR / 2.3f).coerceIn(0.85f, 1.25f)
@@ -333,14 +345,25 @@ class GameRenderer(private val context: android.content.Context, private val ctl
             val sp = PuffyTrees.species(idx, t.variant, nearWater)
             val y0 = h.groundAt(t.x, t.z) - 0.1f
             val tint = 0.90f + ((idx * 37) % 30) / 100f
-            val sc = treeScale(t) * (if ((sp and 15) == 6) 0.8f else 1f)
-            val wd = if ((sp and 15) == 5) 0.85f else treeWiden(t)
+            val seed = sp and 15
+            val sc = treeScale(t) * (if (seed == 6) 0.8f else 1f) * PuffyTrees.heightJit(idx, seed)
+            val wd = (if (seed == 5 || seed == 8) 1f else treeWiden(t)) * PuffyTrees.widthJit(idx, seed)
             ms.identity().translate(t.x, y0, t.z).rotate((idx * 83 % 360).toFloat(), 0f, 1f, 0f).scale(sc * wd, sc, sc * wd)
             Matrix.multiplyMM(mvp, 0, vp, 0, ms.top, 0)
             puffy.draw(sp and 15, puffy.detailFor(sqrt(d2)), mvp, ms.top, tint, 0.03f, (sp shr 4) and 15, (sp shr 8) == 1)
         }
-        modelShader.begin(sun, camPos.x, camPos.y, camPos.z, clock)
+        // Round puffy shrubs share the tree program.
         val decorList = decorFor(h)
+        for (d in decorList) {
+            if (d.model != "@shrub") continue
+            val dx = d.x - camPos.x; val dz = d.z - camPos.z
+            val d2 = dx * dx + dz * dz
+            if (d2 > 140f * 140f) continue
+            ms.identity().translate(d.x, h.groundAt(d.x, d.z) - 0.04f, d.z).rotate(d.rot, 0f, 1f, 0f).scale(d.scale * 1.15f, d.scale, d.scale * 1.15f)
+            Matrix.multiplyMM(mvp, 0, vp, 0, ms.top, 0)
+            puffy.draw(7, puffy.detailFor(sqrt(d2) * 1.6f), mvp, ms.top, d.tint, 0.02f, d.kind, false)
+        }
+        modelShader.begin(sun, camPos.x, camPos.y, camPos.z, clock)
         for (d in decorList) {
             if (d.model[0] == '@') continue
             val dx = d.x - camPos.x; val dz = d.z - camPos.z
@@ -350,18 +373,46 @@ class GameRenderer(private val context: android.content.Context, private val ctl
         }
         drawNearGrass(h)
         useMainProgram()
-        // Boulders: two squashed spheres each, in the plain shader.
+        // Boulders: a few squashed spheres each in one of three stone tones, a dark contact patch, and a mossy cap.
         for (d in decorList) {
-            if (d.model != "@rock") continue
             val dx = d.x - camPos.x; val dz = d.z - camPos.z
-            if (dx * dx + dz * dz > 110f * 110f) continue
-            val y = h.groundAt(d.x, d.z)
-            val c = 0.50f * d.tint
-            draw(meshes.sphere, xf(d.x, y + 0.12f * d.scale, d.z, d.scale, d.scale * 0.62f, d.scale * 1.2f, d.rot), c, c * 0.97f, c * 0.90f)
-            draw(meshes.sphere, xf(d.x + 0.45f * d.scale, y + 0.05f * d.scale, d.z + 0.2f * d.scale, d.scale * 0.55f, d.scale * 0.4f, d.scale * 0.6f, d.rot), c * 1.1f, c * 1.07f, c)
-            draw(meshes.sphere, xf(d.x - 0.30f * d.scale, y + 0.04f * d.scale, d.z - 0.35f * d.scale, d.scale * 0.45f, d.scale * 0.32f, d.scale * 0.48f, d.rot), c * 0.92f, c * 0.90f, c * 0.86f)
-            draw(meshes.sphere, xf(d.x, y + 0.27f * d.scale, d.z, d.scale * 0.62f, d.scale * 0.17f, d.scale * 1.05f, d.rot), 0.30f, 0.52f, 0.20f)   // mossy cap
+            val d2 = dx * dx + dz * dz
+            if (d.model == "@rock") {
+                if (d2 > 110f * 110f) continue
+                val y = h.groundAt(d.x, d.z)
+                val sc = d.scale
+                val tone = ROCK_TONES[d.kind % 3]
+                val c = d.tint
+                val r = tone[0] * c; val g = tone[1] * c; val b = tone[2] * c
+                draw(meshes.cyl, xf(d.x, y + 0.012f, d.z, sc * 1.25f, 0.01f, sc * 1.45f, d.rot), 0.13f, 0.24f, 0.09f)   // contact shadow in the grass
+                draw(meshes.sphere, xf(d.x, y + 0.12f * sc, d.z, sc, sc * 0.62f, sc * 1.2f, d.rot), r, g, b)
+                draw(meshes.sphere, xf(d.x + 0.45f * sc, y + 0.05f * sc, d.z + 0.2f * sc, sc * 0.55f, sc * 0.4f, sc * 0.6f, d.rot), r * 1.1f, g * 1.08f, b * 1.04f)
+                draw(meshes.sphere, xf(d.x - 0.30f * sc, y + 0.04f * sc, d.z - 0.35f * sc, sc * 0.45f, sc * 0.32f, sc * 0.48f, d.rot), r * 0.88f, g * 0.88f, b * 0.86f)
+                // A pale chipped face on the sunny side and a mossy cap.
+                draw(meshes.sphere, xf(d.x + 0.18f * sc, y + 0.17f * sc, d.z + 0.1f * sc, sc * 0.42f, sc * 0.30f, sc * 0.60f, d.rot), r * 1.22f, g * 1.20f, b * 1.14f)
+                draw(meshes.sphere, xf(d.x - 0.05f * sc, y + 0.27f * sc, d.z, sc * 0.62f, sc * 0.17f, sc * 1.05f, d.rot), 0.30f, 0.52f, 0.20f)
+            } else if (d.model == "@sign") {
+                if (d2 > 90f * 90f) continue
+                drawMarkerPost(h, d)
+            } else if (d.model == "@stake") {
+                if (d2 > 70f * 70f) continue
+                val y = h.groundAt(d.x, d.z)
+                draw(meshes.cyl, xf(d.x, y - 0.05f, d.z, 0.03f, 0.80f, 0.03f), 0.80f, 0.74f, 0.58f)
+                draw(meshes.cyl, xf(d.x, y + 0.60f, d.z, 0.034f, 0.16f, 0.034f), 0.90f, 0.16f, 0.14f)
+            }
         }
+    }
+
+    /** A little wooden post with a colour-banded board, set beside the fairway. Kind 0 is blue, kind 1 is orange. */
+    private fun drawMarkerPost(h: Hole, d: Scenery.Item) {
+        val y = h.groundAt(d.x, d.z)
+        draw(meshes.cyl, xf(d.x, y - 0.05f, d.z, 0.045f, 0.86f, 0.045f), 0.40f, 0.29f, 0.17f)
+        draw(meshes.cube, xf(d.x, y + 1.02f, d.z, 0.50f, 0.30f, 0.05f, d.rot), 0.93f, 0.92f, 0.86f)
+        val bc = if (d.kind == 0) floatArrayOf(0.20f, 0.45f, 0.80f) else floatArrayOf(0.92f, 0.52f, 0.14f)
+        draw(meshes.cube, xf(d.x, y + 1.11f, d.z, 0.44f, 0.09f, 0.055f, d.rot), bc[0], bc[1], bc[2])
+        draw(meshes.cube, xf(d.x, y + 0.95f, d.z, 0.30f, 0.045f, 0.055f, d.rot), 0.30f, 0.30f, 0.34f)
+        draw(meshes.cube, xf(d.x, y + 1.19f, d.z, 0.56f, 0.03f, 0.10f, d.rot), 0.40f, 0.29f, 0.17f)
+        draw(meshes.sphere, xf(d.x, y + 1.26f, d.z, 0.05f, 0.05f, 0.05f), 0.95f, 0.93f, 0.85f)
     }
 
     /** Grass tufts in the rough around the camera: a fixed grid, jittered by a hash, so they never flicker. */
@@ -465,9 +516,38 @@ class GameRenderer(private val context: android.content.Context, private val ctl
         draw(m.ringThin, xf(b.x, y + 1.38f, b.z, 0.335f, 2.2f, 0.335f), 0.98f, 0.78f, 0.10f)
         draw(m.ringThin, xf(b.x, y + 1.46f, b.z, 0.335f, 1.0f, 0.335f), 0.80f, 0.82f, 0.86f)
         draw(m.cone, xf(b.x, y + 1.44f, b.z, 0.30f, 0.10f, 0.30f), 0.98f, 0.78f, 0.10f)
-        // A tall flag so the pin can be found from the tee.
-        draw(m.cyl, xf(b.x + 0.7f, y + 0f, b.z, 0.02f, 3.4f, 0.02f), 0.9f, 0.9f, 0.9f)
-        draw(m.cube, xf(b.x + 0.7f, y + 3.15f, b.z + 0.3f, 0.03f, 0.32f, 0.6f), 0.95f, 0.35f, 0.15f)
+        // Dark contact patch under the base and a bright target ring on the grass, so the pin reads from far away.
+        draw(m.cyl, xf(b.x, y + 0.006f, b.z, 0.55f, 0.01f, 0.55f), 0.12f, 0.26f, 0.10f)
+        draw(m.ringThin, xf(b.x, y + 0.03f, b.z, 1.15f, 0.5f, 1.15f), 1.00f, 0.92f, 0.45f, 1f, 0.35f)
+        draw(m.ringThin, xf(b.x, y + 0.03f, b.z, 1.40f, 0.35f, 1.40f), 1.00f, 1.00f, 0.90f, 1f, 0.30f)
+        // Little tines running from the top band up to the hat, so the cage looks closed.
+        for (k in 0 until 6) {
+            val a = (2.0 * PI * k / 6).toFloat()
+            draw(m.cyl, xf(b.x + cos(a) * 0.26f, y + 1.40f, b.z + sin(a) * 0.26f, 0.008f, 0.07f, 0.008f, 0f), 0.86f, 0.87f, 0.90f)
+        }
+        // Flag marker: a tall pole beside the basket, with a red band and a gold ball, and a swallow-tail pennant that flutters.
+        // The pennant lies across the line of approach so it faces the player coming in.
+        val pa = h.path[h.path.size - 2]
+        var ax = b.x - pa.x; var az = b.z - pa.z
+        val al = sqrt(ax * ax + az * az).coerceAtLeast(0.01f); ax /= al; az /= al
+        val rx = az; val rz = -ax                      // to the player's right
+        val headA = Math.toDegrees(atan2(ax.toDouble(), az.toDouble())).toFloat()
+        val fx = b.x + rx * 0.75f; val fz = b.z + rz * 0.75f
+        draw(m.cyl, xf(fx, y, fz, 0.022f, 3.4f, 0.022f), 0.92f, 0.92f, 0.92f)
+        draw(m.cyl, xf(fx, y + 2.55f, fz, 0.026f, 0.28f, 0.026f), 0.90f, 0.20f, 0.16f)
+        draw(m.cyl, xf(fx, y + 0.40f, fz, 0.026f, 0.22f, 0.026f), 0.90f, 0.20f, 0.16f)
+        draw(m.sphere, xf(fx, y + 3.44f, fz, 0.06f, 0.06f, 0.06f), 1.0f, 0.82f, 0.20f)
+        for (i in 0 until 7) {
+            val f = i / 6f
+            val hgt = 0.40f * (1f - 0.62f * f)
+            val wave = sin(clock * 3.2f - i * 0.9f) * 0.045f * (0.3f + f)
+            val off = 0.06f + i * 0.085f
+            val top = y + 3.34f
+            val shade = 1f - 0.18f * f
+            val white = if (i % 4 == 3) 1f else 0f
+            draw(m.cube, xf(fx + rx * off + ax * wave, top - hgt * 0.5f - 0.04f * f, fz + rz * off + az * wave, 0.09f, hgt, 0.012f, headA),
+                1.0f * shade, (0.40f + 0.20f * white) * shade, 0.12f * shade + 0.35f * white)
+        }
     }
 
     private fun drawGolfer() {

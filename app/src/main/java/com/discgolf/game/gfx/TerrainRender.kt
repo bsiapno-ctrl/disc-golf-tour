@@ -375,6 +375,19 @@ void main() {
     vec3 padCol = mix(vec3(0.70, 0.67, 0.60), vec3(0.62, 0.60, 0.54), vnoise(vWorld.xz * 14.0));
     padCol *= 0.94 + 0.10 * vnoise(vWorld.xz * 60.0);
     padCol = mix(padCol, vec3(0.42, 0.41, 0.37), (1.0 - smoothstep(0.0, 0.07, abs(pd + 0.12))) * 0.8);
+    // Aggregate speckle, expansion joints every ~1.27 m with a centre seam, a lit bevel at the lip.
+    vec2 plq = vec2(dot(rel, vec2(-uTeeDir.y, uTeeDir.x)), dot(rel, uTeeDir) - 0.35);
+    float spk = hash(floor(vWorld.xz * 42.0));
+    padCol *= 1.0 + (step(0.93, spk) - step(spk, 0.07)) * 0.10 * (1.0 - smoothstep(10.0, 40.0, dist));
+    float jt = min(abs(fract(plq.y / 1.27 + 0.5) - 0.5) * 1.27, abs(plq.x));
+    padCol *= 1.0 - 0.26 * (1.0 - smoothstep(0.010, 0.026, jt)) * step(pd, -0.16);
+    padCol += vec3(0.07, 0.07, 0.06) * (1.0 - smoothstep(0.0, 0.05, abs(pd + 0.045)));
+    // Slab thickness: a thin dark shadow just outside the edge, and loose pebbles scattered round it in the dirt.
+    col *= 1.0 - 0.30 * smoothstep(0.0, 0.03, pd) * (1.0 - smoothstep(0.03, 0.16, pd));
+    float peb = hash(floor(vWorld.xz * 11.0) + 5.0);
+    vec2 pf = fract(vWorld.xz * 11.0) - 0.5;
+    float pebble = step(0.86, peb) * (1.0 - smoothstep(0.10, 0.20, length(pf))) * dirt * (1.0 - pad) * (1.0 - smoothstep(12.0, 30.0, dist));
+    col = mix(col, vec3(0.60 + 0.2 * peb, 0.56 + 0.18 * peb, 0.48 + 0.15 * peb), pebble * 0.8);
     col = mix(col, padCol, pad);
     // Soft ambient occlusion pooled round tree bases (darker, deeper green, a little earth).
     col = mix(col, col * vec3(0.52, 0.58, 0.42), shd.g * 0.75);
