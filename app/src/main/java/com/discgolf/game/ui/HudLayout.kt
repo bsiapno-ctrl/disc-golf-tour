@@ -38,7 +38,7 @@ object HudLayout {
 
     /** The "1 POWER - 2 RUN-UP - 3 RELEASE" step indicator, floating just above the swing dial's pin chip. */
     fun stepBar(meter: HRect, d: Float): HRect =
-        HRect(meter.centerXf() - 88 * d, meter.t - 72 * d, meter.centerXf() + 88 * d, meter.t - 52 * d)
+        HRect(meter.centerXf() - 88 * d, meter.t - 72 * d, meter.centerXf() + 68 * d, meter.t - 52 * d)
 
     fun compute(w: Float, h: Float, d: Float): HudRects {
         val acx = w - 82 * d; val acy = h - 100 * d; val ar = 64 * d
