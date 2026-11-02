@@ -14,6 +14,8 @@ def setup():
         pb.rotation_mode = 'QUATERNION'
     arm.animation_data_create()
     arm.animation_data.action = None
+    for pb in arm.pose.bones:   # the leg IK + pole constraints fight the hand-solved legs (knees swing inward): drive legs from two_bone_ik only
+        for c in pb.constraints: c.mute = True
     return arm
 
 def upd(): bpy.context.view_layer.update()
@@ -104,11 +106,11 @@ def pose(arm, P):
     # legs: planted feet, lead foot steps toward the target
     step = P['step']; wide = P.get('wide', 0.0); stride = P.get('stride', 0.0); trail = P.get('trail', 0.0)
     # athletic stance: feet shoulder-width or wider (hip width 0.24 -> ~0.46 apart at address, ~0.7 in the charge)
-    sp = 0.15 + 0.11 * wide + 0.07 * min(step, 1.0)
+    sp = 0.09 + 0.09 * wide + 0.06 * min(step, 1.0)
     cross = P.get('cross', 0.0)
     tL = footL + Vector((sp, -0.18 * step - 0.10 * stride + P.get('lY', 0.0), 0.11 * math.sin(min(step, 1.0) * math.pi) + P.get('lZ', 0.0)))
     tR = footR + Vector((-sp * (1.0 - 0.45 * trail) + 0.0 * cross, 0.14 * wide + 0.10 * trail + 0.05 * cross + P.get('rY', 0.0), 0.20 * trail + P.get('rZ', 0.0)))
-    ko = 1.1   # knees pushed outward over the toes
+    ko = 0.45   # knees pushed outward over the toes
     two_bone_ik(arm, pb['UpperLeg.L'], pb['LowerLeg.L'], tL, out=ko)
     two_bone_ik(arm, pb['UpperLeg.R'], pb['LowerLeg.R'], tR, out=-ko)
     pb['Foot.L'].matrix = Matrix.Translation(tL - footL) @ pb['Foot.L'].matrix
