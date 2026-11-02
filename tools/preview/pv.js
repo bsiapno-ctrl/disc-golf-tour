@@ -16,7 +16,7 @@ const hole = JSON.parse(fs.readFileSync(`hole${holeNum}.json`));
   const p = await b.newPage({ viewport: { width: W, height: HT } });
   await p.setContent(`<body style="margin:0"><canvas id=c width=${W} height=${HT}></canvas></body>`);
   p.on('console', m => console.log('page:', m.text()));
-  const err = await p.evaluate(async ({ sh, treeMeshes, hole, mode, assets, W, HT, charName, process_cam, FOV, process_clip }) => {
+  const err = await p.evaluate(async ({ sh, treeMeshes, hole, mode, assets, W, HT, charName, process_cam, FOV, process_clip, process_mir }) => {
     const gl = document.getElementById('c').getContext('webgl2', { antialias: true, preserveDrawingBuffer: true });
     const mat = {
       ident: () => [1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1],
@@ -192,8 +192,8 @@ const hole = JSON.parse(fs.readFileSync(`hole${holeNum}.json`));
       const roles={Casual2:[['LightBrown'],['LightBlue'],['Hair']],Casual:[['Purple'],['LightBlue'],['Hair']],Beach:[['LightBrown'],['Red_Dark'],['Hair']],Adventurer:[['Green'],['Brown'],['Hair']],Punk:[['White'],['LightBlue'],['Red','Red_Dark']],Worker:[[],['Brown'],['Hair']]}[charName];
       const skinC=hex(SKIN[1]), skinD=hex(SKIN[1],0.85), hairC=hex(HAIR[1]), brow=hex(HAIR[1],0.6), shirtC=hex(SHIRT[2]), shortsC=hex(SHORTS[1]);
       gl.useProgram(sknp); gl.uniform3f(U(sknp,'uLightDir'),...sun); gl.uniform3f(U(sknp,'uCamPos'),...eye); gl.uniform3f(U(sknp,'uFogColor'),0.80,0.89,0.95); gl.uniform4fv(U(sknp,'uBones'), rows.subarray(0,64*12));
-      const path=hole.path; const hd=Math.atan2(path[1][0]-path[0][0], path[1][1]-path[0][1])*180/Math.PI; const bw=1;
-      const world = mat.mul(mat.trs(hole.tee[0],hole.tee[1],hole.tee[2],1,1,1), mat.mul(rotY(hd), mat.trs(0,0,0,-bw,1,bw)));
+      const path=hole.path; const hd=Math.atan2(path[1][0]-path[0][0], path[1][1]-path[0][1])*180/Math.PI; const bw=1, mx=(typeof process_mir!=="undefined"&&process_mir)?1:-1;
+      const world = mat.mul(mat.trs(hole.tee[0],hole.tee[1],hole.tee[2],1,1,1), mat.mul(rotY(hd), mat.trs(0,0,0,mx*bw,1,bw)));
       gl.uniformMatrix4fv(U(sknp,'uMVP'),false,mat.mul(vp,world)); gl.uniformMatrix4fv(U(sknp,'uModel'),false,world);
       const parts=[]; for (const mesh of J.meshes) for (const p of mesh.primitives) { const at=p.attributes; const pos=readAcc(J,bin,at.POSITION), nor0=readAcc(J,bin,at.NORMAL), jn=readAcc(J,bin,at.JOINTS_0), wt=readAcc(J,bin,at.WEIGHTS_0); const idx=Uint16Array.from(readAcc(J,bin,p.indices)); const n=pos.length/3;
         const nor=new Float32Array(n*3); { const M=new Map(); const ky=i=>[0,1,2].map(k=>Math.round(pos[i*3+k]*400)).join(','); for(let i=0;i<n;i++){ const k=ky(i); let a=M.get(k); if(!a){a=[0,0,0];M.set(k,a);} for(let c=0;c<3;c++) a[c]+=nor0[i*3+c]; } for(let i=0;i<n;i++){ const a=M.get(ky(i)); const l=1/Math.max(Math.hypot(a[0],a[1],a[2]),1e-4); for(let c=0;c<3;c++) nor[i*3+c]=nor0[i*3+c]*0.04+a[c]*l*0.96; } }
@@ -250,7 +250,7 @@ const hole = JSON.parse(fs.readFileSync(`hole${holeNum}.json`));
       gl.useProgram(main); }
     { const t=hole.tee, hd2=0; const g=(r,a,c)=>drawM(disc, mat.trs(t[0],t[1]+0.05,t[2],r,1,r),c[0],c[1],c[2],a); for(let i=0;i<12;i++){ g(1.2-i*0.065,0.042,[0,.06,.02]); } }
     return gl.getError();
-  }, { sh: shaders, treeMeshes, hole, mode, assets, W, HT, charName, process_cam: (process.env.CAM||'3.6,0.7,1.5,14,0.9').split(',').map(Number), FOV: +(process.env.FOV||50), process_clip: (process.env.CLIP||'Windup_BH,0').split(',') });
+  }, { sh: shaders, treeMeshes, hole, mode, assets, W, HT, charName, process_cam: (process.env.CAM||'3.6,0.7,1.5,14,0.9').split(',').map(Number), FOV: +(process.env.FOV||50), process_clip: (process.env.CLIP||'Windup_BH,0').split(','), process_mir: !!process.env.LEFTY });
   console.log('gl error', err);
   await p.screenshot({ path: outFile });
   await b.close();
