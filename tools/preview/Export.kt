@@ -1,7 +1,8 @@
 import com.discgolf.game.core.*
 fun main(args: Array<String>) {
     val n = args[0].toInt()
-    val h = Courses.defaultCourse()[n - 1]
+    // Optional second argument: a course JSON (first layout) instead of the built-in course.
+    val h = if (args.size > 1) CourseFile.parse(java.io.File(args[1]).readText()).layouts[0].holes[n - 1] else Courses.defaultCourse()[n - 1]
     var minX = 1e9f; var maxX = -1e9f; var minZ = 1e9f; var maxZ = -1e9f
     for (p in h.path) { minX = minOf(minX, p.x); maxX = maxOf(maxX, p.x); minZ = minOf(minZ, p.z); maxZ = maxOf(maxZ, p.z) }
     val pad = 85f; val x0 = minX - pad; val z0 = minZ - pad

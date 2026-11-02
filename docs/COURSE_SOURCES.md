@@ -30,3 +30,12 @@ may mean is probably Cypress Point Park (the only Tampa Cypress disc golf course
 blue-ribbon-pines-inspired, idlewild-inspired, maple-hill-inspired, smugglers-notch-inspired: no usable per-hole data
 was found (Blue Ribbon Pines on UDisc is a 27-hole layout set, not a plain 18). Their pars and lengths are made up;
 the layout description says UNVERIFIED, INVENTED.
+
+## Hole shaping (doglegs, blockers, hazards)
+
+Every bundled course except Picnic Island was reshaped so that holes are not all straight tee-to-basket shots: doglegs
+(via points with trees filling the inside corner), S-curves, tall blocking trees, bush walls, a few ponds and out-of-bounds
+strips, tight tree tunnels. This is INVENTED shaping done by tools/shape_holes.py. It is not taken from the real
+courses: for Olympus and Cypress Point Park only the lengths, pars and approximate tee/basket positions stay as described
+above (tee-to-basket distance and par are unchanged; the playing line is a few percent longer on doglegs), and the water,
+OB and bends there should not be read as real features. The four "inspired" courses were already invented.

@@ -15,6 +15,20 @@ class Tree(
     val variant: Int,
 )
 
+/** A low round shrub. Stops and deflects discs like a tree trunk, but only up to [height]; a high shot clears it. */
+class Bush(val x: Float, val z: Float, val radius: Float) {
+    val height: Float get() = 1.3f * radius
+}
+
+/** An out-of-bounds patch (an ellipse), for a road, creek bank or fence line beside the fairway. */
+class ObZone(val cx: Float, val cz: Float, val rx: Float, val rz: Float) {
+    fun contains(x: Float, z: Float): Boolean {
+        val dx = (x - cx) / rx
+        val dz = (z - cz) / rz
+        return dx * dx + dz * dz < 1f
+    }
+}
+
 /** Water hazard (an ellipse). Landing in it is a penalty stroke. */
 class Pond(val cx: Float, val cz: Float, val rx: Float, val rz: Float) {
     /** Height of the water surface. Set when the terrain around the pond is built. */
@@ -51,6 +65,12 @@ class Hole(
     val ponds: List<Pond>,
     val terrain: Terrain = FlatTerrain,
     val bunkers: List<Bunker> = emptyList(),
+    /** Low shrubs that block discs up to their height. */
+    val bushes: List<Bush> = emptyList(),
+    /** Extra out-of-bounds patches beside the fairway. */
+    val obZones: List<ObZone> = emptyList(),
+    /** Optional one-line note on how to play the hole (shown with the hole preview). */
+    val obstacleNotes: String? = null,
 ) {
     /** Tee and basket positions, sitting on the ground. */
     val tee: Vec3 = path.first().let { Vec3(it.x, terrain.heightAt(it.x, it.z), it.z) }
@@ -96,6 +116,7 @@ class Hole(
 
     fun surfaceAt(x: Float, z: Float): Surface {
         for (p in ponds) if (p.contains(x, z)) return Surface.WATER
+        for (o in obZones) if (o.contains(x, z)) return Surface.OUT_OF_BOUNDS
         val (d, s) = project(x, z)
         // Far from the line, or well behind the tee in whatever direction the hole points.
         if (d > 62f || (s <= 0.01f && d > 18f)) return Surface.OUT_OF_BOUNDS
@@ -163,6 +184,23 @@ class HoleEnvironment(
                 val n = if (d > 1e-3f) Vec3(dx / d, 0f, dz / d) else Vec3(1f, 0f, 0f)
                 flight.pos = Vec3(t.x + n.x * r * 1.03f, p.y, t.z + n.z * r * 1.03f)
                 flight.bounceOff(n, if (frac < 0.42f) 0.28f else 0.40f)
+                flight.events += FlightEvent.TREE
+                return
+            }
+        }
+
+        // Bushes: low, so only a disc below their height is stopped.
+        for (b in hole.bushes) {
+            val dx = p.x - b.x
+            val dz = p.z - b.z
+            val rr = b.radius * 0.9f
+            if (abs(dx) > rr || abs(dz) > rr) continue
+            if (p.y - hole.groundAt(b.x, b.z) > b.height) continue
+            val d = hypot(dx, dz)
+            if (d < rr) {
+                val n = if (d > 1e-3f) Vec3(dx / d, 0f, dz / d) else Vec3(1f, 0f, 0f)
+                flight.pos = Vec3(b.x + n.x * rr * 1.03f, p.y, b.z + n.z * rr * 1.03f)
+                flight.bounceOff(n, 0.22f)
                 flight.events += FlightEvent.TREE
                 return
             }
@@ -306,7 +344,8 @@ object Courses {
         val trees = h.trees.filter { Math.hypot((it.x - tee.x).toDouble(), (it.z - tee.z).toDouble()) > 6.0 }
         var len = 0f
         for (i in 1 until path.size) len += path[i].distanceXZ(path[i - 1])
-        return Hole(h.number, h.name, parFor(len), path, h.fairwayWidth, trees, h.ponds, h.terrain, h.bunkers)
+        val bushes = h.bushes.filter { Math.hypot((it.x - tee.x).toDouble(), (it.z - tee.z).toDouble()) > 4.0 }
+        return Hole(h.number, h.name, parFor(len), path, h.fairwayWidth, trees, h.ponds, h.terrain, h.bunkers, bushes, h.obZones, h.obstacleNotes)
     }
 
     /**
@@ -323,20 +362,30 @@ object Courses {
         val grove = Noise2((seed * 7 + 3).toInt())
         val kind = Noise2((seed * 13 + 5).toInt())
 
-        fun tryAdd(x: Float, z: Float, forced: Int = -1, tall: Float = 0f): Boolean {
+        fun tryAdd(x: Float, z: Float, forced: Int = -1, tall: Float = 0f, minOff: Float = 0.15f): Boolean {
             if (ponds.any { it.contains(x, z) }) return false
+            if (shell.obZones.any { it.contains(x, z) }) return false
+            if (shell.bushes.any { hypot(x - it.x, z - it.z) < it.radius + 1.2f }) return false
             if (shell.bunkers.any { hypot(x - it.cx, z - it.cz) < maxOf(it.rx, it.rz) + 2.5f }) return false
             if (hypot(x - shell.basket.x, z - shell.basket.z) < 5f) return false
             if (hypot(x - shell.tee.x, z - shell.tee.z) < 6f) return false
             // Keep the aim line off the tee clear: no trees within ~6 m of the fairway edge for the first 25 m.
             if (hypot(x - shell.tee.x, z - shell.tee.z) < 27f && shell.distToPath(x, z) < width / 2f + 6f) return false
-            if (shell.distToPath(x, z) < width / 2f + 0.15f) return false
+            if (shell.distToPath(x, z) < width / 2f + minOff) return false
             for (t in trees) { val dx = t.x - x; val dz = t.z - z; if (dx * dx + dz * dz < 2.2f * 2.2f) return false }
             val roll = rnd.nextFloat()
             val variant = if (forced >= 0) forced else if (roll < 0.55f) 0 else if (roll < 0.90f) 1 else 2
-            trees += Tree(x, z, 7f + rnd.nextFloat() * 6.5f + tall, 0.2f + rnd.nextFloat() * 0.14f, 1.7f + rnd.nextFloat() * 1.4f, variant)
+            val height = 7f + rnd.nextFloat() * 6.5f + tall
+            val trunk = 0.2f + rnd.nextFloat() * 0.14f
+            val canopy = 1.7f + rnd.nextFloat() * 1.4f
+            // Never let a scatter tree eat into the lane: a disc down the centreline keeps its clearance.
+            if (shell.distToPath(x, z) < max(canopy * 0.75f, trunk + 0.3f) + Lanes.DISC_CLEARANCE + 0.1f) return false
+            trees += Tree(x, z, height, trunk, canopy, variant)
             return true
         }
+
+        // Doglegs: fill the inside of every bend with woods so the straight line is shut and the lane follows the bend.
+        for ((gx, gz, tall) in Lanes.cornerSpots(shell, rnd)) tryAdd(gx, gz, if (rnd.nextFloat() < 0.6f) 0 else -1, tall, minOff = 1.2f)
 
         var s = 7f
         while (s < shell.length - 3f) {
@@ -375,6 +424,27 @@ object Courses {
             val off = width / 2f + 7f + rnd.nextFloat() * rnd.nextFloat() * 70f
             val x = pt.x + right.x * side * off; val z = pt.z + right.z * side * off
             if (kind.at(x / 28f, z / 28f) > -0.15f) tryAdd(x, z)
+        }
+        // A guardian cluster of last resort: if the straight tee-to-basket line is somehow still open, plug it where it
+        // runs furthest from the mown corridor.
+        if (bendsOf(shell).isNotEmpty() && !Lanes.directLineBlocked(shell, trees = trees)) {
+            val a = shell.tee; val b = shell.basket
+            val len = a.distanceXZ(b)
+            var bestD = 0f; var bx = 0f; var bz = 0f
+            var i = 8f
+            while (i < len - 8f) {
+                val x = a.x + (b.x - a.x) * i / len; val z = a.z + (b.z - a.z) * i / len
+                val d = shell.distToPath(x, z)
+                if (d > bestD) { bestD = d; bx = x; bz = z }
+                i += 1f
+            }
+            if (bestD > width / 2f + 1.5f) {
+                val dx = (b.x - a.x) / len; val dz = (b.z - a.z) / len
+                for (k in -1..1) {
+                    val x = bx - dz * k * 2.6f; val z = bz + dx * k * 2.6f
+                    if (!tryAdd(x, z, 0, 3f, 1.2f)) trees += Tree(x, z, 12f, 0.3f, 2.6f, 0)
+                }
+            }
         }
         return trees
     }

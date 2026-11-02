@@ -50,6 +50,10 @@ object Scenery {
                 out += Item(model, x, z, (if (bed) 0.9f else 0.65f) + rnd.nextFloat() * (if (bed) 0.9f else 0.6f), rnd.nextFloat() * 360f, 0.85f + rnd.nextFloat() * 0.3f)
             }
         }
+        // Course-defined bushes (they block discs): drawn as round shrubs sized to their radius, a few per bush.
+        for ((bi, b) in h.bushes.withIndex()) {
+            out += Item("@shrub", b.x, b.z, b.radius / 0.62f, (bi * 97 % 360).toFloat(), 0.95f, kind = if (bi % 5 == 4) 2 else bi % 2)
+        }
         // Loose grass tufts.
         repeat((h.length / 4f).toInt().coerceIn(20, 90)) {
             val (x, z) = around(rnd.nextFloat() * h.length, 1.2f, 10f)
