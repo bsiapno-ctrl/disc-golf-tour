@@ -138,6 +138,7 @@ def windup(forehand, power):
     W = WIND[forehand]
     P = {k: mix(ADDR[k], W[k], p) for k in ADDR}
     P['step'] = 0.0
+    P['drive'] = -0.05 * p   # weight loads onto the back foot
     return P
 
 # key columns: t, armYaw, elbow, bodyYaw, hipYaw, step, lean, forePitch, wristYaw, offTuck, lag, cross, armPitch, crouch, headComp
@@ -145,13 +146,20 @@ def swing_keys(forehand, release):
     W = WIND[forehand]
     k0 = (0, W['armYaw'], W['elbow'], W['bodyYaw'], W['hipYaw'], 0.0, W['lean'], W['forePitch'], W['wristYaw'], W['offTuck'], 0.0, W['cross'], W['armPitch'], W['crouch'], W['hc'])
     if forehand:
+        # Throw_BH (flag True): disc reaches back and out to the throwing side, then is pulled low-to-high across the body.
+        # Kinetic chain taken from a studied batting swing: (1) hips and legs commit first (front foot planted ~2 frames in),
+        # (2) hips open while the shoulders are still loading further back, so the hip/shoulder separation grows to a peak,
+        # (3) shoulders then whip through, passing the hips right at release (separation crosses zero),
+        # (4) the arm is the last link: it trails, then peaks in speed at release and decays,
+        # (5) after release the pelvis brakes and the shoulders overrun it, the body sinks to absorb the finish.
         return [k0,
-                (0.12, 100, 98, 44, -6, 0.65, 24, -10, -10, 0.9, 0.7, 0.0, 46, 1.4, 0.5),
-                (0.24, 70, 80, 30, -32, 1.0, 24, -22, 0, 1.0, 1.0, 0.0, 42, 1.45, 0.55),
-                (release, 16, 20, -8, -44, 1.0, 28, -4, 28, 0.2, 0.8, 0.0, 38, 1.4, 0.6),
-                (0.52, -40, 16, -40, -46, 1.0, 28, 6, 34, -0.3, 0.2, 0.0, 36, 1.2, 0.6),
-                (0.75, -60, 24, -42, -44, 1.0, 22, -6, 15, -0.4, 0.0, 0.0, 34, 0.9, 0.8),
-                (1.0, -50, 30, -36, -36, 1.0, 12, -10, 5, -0.5, 0.0, 0.0, 32, 0.75, 0.9)]
+                (0.08, 112, 92, 56, 12, 0.95, 20, -8, -10, 0.8, 0.7, 0.0, 48, 1.35, 0.5),
+                (0.20, 92, 96, 34, -14, 1.0, 24, -18, -2, 1.0, 1.0, 0.0, 44, 1.45, 0.55),
+                (release, 20, 24, -26, -38, 1.0, 28, -4, 28, 0.2, 0.3, 0.0, 38, 1.35, 0.6),
+                (0.50, -42, 16, -48, -42, 1.0, 28, 6, 34, -0.3, 0.0, 0.0, 36, 1.1, 0.6),
+                (0.64, -60, 24, -56, -38, 1.0, 26, -4, 22, -0.4, 0.0, 0.0, 35, 1.25, 0.8),
+                (0.82, -62, 26, -52, -38, 1.0, 22, -8, 10, -0.5, 0.0, 0.0, 33, 1.15, 0.9),
+                (1.0, -52, 30, -46, -38, 1.0, 16, -10, 5, -0.5, 0.0, 0.0, 32, 1.0, 1.0)]
     # Backhand, low flat sweep: disc taken back across the body at hip height, pulled across the front of the
     # waist (elbow bent), snapped out, then a long extended finish out to the right with a deep forward lean.
     return [k0,
@@ -164,9 +172,9 @@ def swing_keys(forehand, release):
 
 R_ = 0.26 / 0.70
 # t, drive(m fwd), rYextra(neg=fwd), rZ lift, lZ lift, sway(m), bob(m)
-EXTRA = {True: [(0, 0, 0, 0, 0, 0, 0), (0.12, 0.04, -0.12, 0.10, 0, -0.03, 0.0), (0.24, 0.16, -0.34, 0.06, 0.0, -0.04, -0.02),
-                (R_, 0.26, -0.10, 0.0, 0, -0.02, 0.0), (0.52, 0.30, 0.10, 0.12, 0, 0.0, 0.03), (0.75, 0.26, 0.20, 0.27, 0, 0.01, 0.04), (1.0, 0.22, 0.18, 0.30, 0, 0.01, 0.03)],
-         False: [(0, 0, 0, 0, 0, 0, 0), (0.12, 0.04, -0.10, 0.08, 0, 0.03, 0.0), (0.24, 0.16, -0.30, 0.05, 0.0, 0.04, -0.02),
+EXTRA = {True: [(0, -0.05, 0, 0, 0, 0, 0), (0.12, 0.06, -0.12, 0.10, 0, -0.03, 0.0), (0.24, 0.20, -0.34, 0.06, 0.0, -0.04, -0.02),
+                (R_, 0.28, -0.10, 0.0, 0, -0.02, 0.0), (0.52, 0.30, 0.10, 0.12, 0, 0.0, 0.03), (0.75, 0.26, 0.20, 0.27, 0, 0.01, 0.04), (1.0, 0.22, 0.18, 0.30, 0, 0.01, 0.03)],
+         False: [(0, -0.05, 0, 0, 0, 0, 0), (0.12, 0.04, -0.10, 0.08, 0, 0.03, 0.0), (0.24, 0.16, -0.30, 0.05, 0.0, 0.04, -0.02),
                 (R_, 0.26, -0.10, 0.0, 0, 0.02, 0.0), (0.52, 0.30, 0.10, 0.12, 0, 0.0, 0.03), (0.75, 0.26, 0.18, 0.24, 0, 0.0, 0.04), (1.0, 0.22, 0.16, 0.26, 0, 0.0, 0.03)]}
 
 def swing_pose(forehand, t, release):
@@ -229,15 +237,22 @@ HIP = [(0, 0), (7, -5), (14.5, 5), (22, -5), (29, 0)]
 PUMP = [(0, 0.6), (7, 1.0), (10.5, 0.3), (14.5, 1.0), (18, 0.3), (22, 1.0), (29, 0.6)]
 
 def runup_pose(forehand, f):
-    """Four-step approach from the address stance into the first pose of Throw_*. Frame f in 0..29; last frame == Throw_* frame 0."""
+    """Approach from the address stance into the first pose of Throw_*. Frame f in 0..29; last frame == Throw_* frame 0.
+    From the reference: the pelvis turns into the coil first, the shoulders follow ~3 frames later and the arm last; the
+    trunk counter-rotates against the pelvis through each stride; the body sinks and the weight settles back for the load."""
     end = swing_pose(forehand, 0.0, R_)
-    b = smooth((f - 13) / 16.0)
-    bs = smooth(f / 6.0)
-    run = dict(armYaw=12, elbow=75, bodyYaw=0, hipYaw=kf(HIP, f) * 1.6, step=0.0, lean=30, forePitch=-45, wristYaw=0,
-               offTuck=kf(PUMP, f), lag=0.0, cross=0.0, armPitch=mix(62, 52, bs) + 3 * math.sin(f * 2 * math.pi / 14.5),
-               crouch=mix(0.95, 0.65, bs), hc=0.5, shift=0.0, wide=mix(0.7, 0.25, bs), stride=0.0, trail=0.0,
+    bh = smooth((f - 8) / 18.0)    # hips lead
+    bs = smooth((f - 11) / 18.0)   # shoulders ~3 frames behind
+    ba = smooth((f - 14) / 15.0)   # arm / disc last
+    bl = smooth((f - 13) / 16.0)   # everything else (feet, crouch, lean)
+    gs = smooth(f / 6.0)
+    hipg = kf(HIP, f) * 1.6
+    run = dict(armYaw=12, elbow=75, bodyYaw=-0.9 * hipg, hipYaw=hipg, step=0.0, lean=30, forePitch=-45, wristYaw=0,
+               offTuck=kf(PUMP, f), lag=0.0, cross=0.0, armPitch=mix(62, 52, gs) + 3 * math.sin(f * 2 * math.pi / 14.5),
+               crouch=mix(0.95, 0.75, gs), hc=0.5, shift=0.0, wide=mix(0.7, 0.68, gs), stride=0.0, trail=0.0,
                drive=0.0, rY=0.0, rZ=0.0, lZ=0.0, sway=kf(SWAY, f), bob=kf(BOB, f))
-    P = {k: mix(run[k], end[k], b) if k in end else run[k] for k in run}
+    wts = dict(hipYaw=bh, bodyYaw=bs, lag=bs, armYaw=ba, elbow=ba, armPitch=ba, forePitch=ba, wristYaw=ba)
+    P = {k: mix(run[k], end[k], wts.get(k, bl)) if k in end else run[k] for k in run}
     P['hy'] = 0.0
     P['lY'] = kf(LY, f); P['lZ'] = kf(LZ, f, 0.0); P['rZ'] = kf(RZ, f, 0.0)
     P['rY'] = kf(RYA, f) - 0.14 * P['wide']
