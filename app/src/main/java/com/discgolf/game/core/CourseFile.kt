@@ -69,6 +69,10 @@ object CourseFile {
         val ponds: List<Pond>,
         val density: Float,
         val guardian: Float,
+        val extraTrees: List<Tree>,
+        val bushes: List<Bush>,
+        val obZones: List<ObZone>,
+        val notes: String?,
     ) {
         fun build(order: Int, tee: String, basket: String, par: Int?, terrain: Terrain): Hole {
             val t = tees.getValue(tee); val b = baskets.getValue(basket)
@@ -76,9 +80,9 @@ object CourseFile {
             path += Vec3(t.first, 0f, t.second)
             for (v in via) path += Vec3(v.first, 0f, v.second)
             path += Vec3(b.first, 0f, b.second)
-            val shell = Hole(order, name, 3, path, width, emptyList(), ponds, terrain)
-            val treeList = trees ?: Courses.scatterTrees(shell, width, density, guardian, 5000L + number * 131L)
-            return Hole(order, name, par ?: Courses.parFor(shell.length), path, width, treeList, ponds, terrain)
+            val shell = Hole(order, name, 3, path, width, emptyList(), ponds, terrain, emptyList(), bushes, obZones, notes)
+            val treeList = trees ?: Courses.scatterTrees(shell, width, density, guardian, 5000L + number * 131L, extraTrees)
+            return Hole(order, name, par ?: Courses.parFor(shell.length), path, width, treeList, ponds, terrain, emptyList(), bushes, obZones, notes)
         }
     }
 
@@ -97,9 +101,26 @@ object CourseFile {
             if (a.size < 4) throw FormatException("hole $number: a pond needs [cx, cz, rx, rz]")
             Pond(a[0], a[1], a[2], a[3]).also { it.level = terrain.heightAt(a[0], a[1]) - 0.05f }
         } ?: emptyList()
+        fun treeOf(e: Any?, what: String): Tree {
+            val a = numbers(e, what)
+            if (a.size < 4) throw FormatException("hole $number: a tree needs [x, z, height, canopy]")
+            return Tree(a[0], a[1], a[2], (a[2] * 0.03f).coerceIn(0.15f, 0.45f), a[3], if (a.size > 4) a[4].toInt() else 0)
+        }
+        val extraTrees = (m["extraTrees"] as? List<*>)?.map { treeOf(it, "hole $number extraTree") } ?: emptyList()
+        val bushes = (m["bushes"] as? List<*>)?.map { e ->
+            val a = numbers(e, "hole $number bush")
+            if (a.size < 3) throw FormatException("hole $number: a bush needs [x, z, radius]")
+            Bush(a[0], a[1], a[2])
+        } ?: emptyList()
+        val obZones = (m["ob"] as? List<*>)?.map { e ->
+            val a = numbers(e, "hole $number ob")
+            if (a.size < 4) throw FormatException("hole $number: an ob zone needs [cx, cz, rx, rz]")
+            ObZone(a[0], a[1], a[2], a[3])
+        } ?: emptyList()
         return HoleDef(
             number, m.str("name") ?: "Hole $number", m.num("fairwayWidth") ?: 14f, tees, baskets, via, trees, ponds,
             m.num("treeDensity") ?: 0.5f, m.num("guardianChance") ?: 0.2f,
+            extraTrees, bushes, obZones, m.str("obstacleNotes"),
         )
     }
 

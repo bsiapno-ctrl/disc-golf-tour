@@ -3,6 +3,9 @@
 ## [Unreleased]
 
 ### Added
+- Hole shape: "via" bends are a real dogleg corridor with trees filling the inside corner; new hole keys `bushes`, `ob`, `extraTrees`, `obstacleNotes`; `dogleg(hole)` / `previewLine(hole)` for the hole preview; lane checks (HoleShapeTest, tools/preview/LaneCheck.kt). Bundled courses (except Picnic Island) reshaped with doglegs, blockers, bushes, water and OB.
+
+### Added
 - Throwing: forehand throws (mirrored flight), adjustable launch angle and release tilt, new Hyzer flip and Roller shapes, a jointed throwing animation for both backhand and forehand, and the disc now leaves the hand mid-swing.
 - Launch menu scales to any screen size and shape, and rebuilds when the phone is folded or unfolded.
 - Textured glTF trees, bushes, flowers and grass; a minimap; distant hills in the sky.
