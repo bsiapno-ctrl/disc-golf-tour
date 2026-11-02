@@ -40,6 +40,9 @@ class AimStick {
     private var knobY = 0f   // -1..1, screen-down = +
     private var fx = 0f; var fy = 0f
 
+    /** Raw knob deflection after the response curve, x right = +, y up = + (0 when released). */
+    val rawX get() = knobX
+    val rawY get() = -knobY
     val active get() = pointer >= 0
     /** Aim turn command in -1..1 (right = +). */
     val output get() = if (active) AimCurve.response(knobX) else 0f
@@ -64,6 +67,41 @@ class AimStick {
 
     fun up(id: Int): Boolean { if (id != pointer) return false; pointer = -1; knobX = 0f; knobY = 0f; return true }
 
+    /** Axis-end labels drawn outside the circle: left, right, up, down (empty = none). */
+    var labels = arrayOf("", "", "", "")
+    var accent = 0
+
+    private fun axisCross(c: Canvas, p: Paint, d: Float, bx: Float, by: Float) {
+        p.style = Paint.Style.STROKE; p.strokeWidth = 2f * d; p.color = 0x88FFFFFF.toInt()
+        val r = radius * 0.86f
+        c.drawLine(bx - r, by, bx + r, by, p)
+        c.drawLine(bx, by - r, bx, by + r, p)
+        // arrowheads at the four axis ends
+        val a = 6f * d
+        p.style = Paint.Style.FILL; p.color = 0xCCFFFFFF.toInt()
+        val path = android.graphics.Path()
+        for (k in 0 until 4) {
+            val dx = intArrayOf(-1, 1, 0, 0)[k].toFloat(); val dy = intArrayOf(0, 0, -1, 1)[k].toFloat()
+            val tx = bx + dx * (r + a); val ty = by + dy * (r + a)
+            path.reset()
+            path.moveTo(tx, ty)
+            path.lineTo(bx + dx * r - dy * a, by + dy * r + dx * a)
+            path.lineTo(bx + dx * r + dy * a, by + dy * r - dx * a)
+            path.close()
+            c.drawPath(path, p)
+        }
+        // end labels just outside the arrowheads
+        p.textSize = 10f * d; p.textAlign = Paint.Align.CENTER; p.typeface = Ui.BODY
+        p.color = if (accent != 0) accent else 0xFFFFFFFF.toInt()
+        val off = radius + 12f * d
+        if (labels[0].isNotEmpty()) c.drawText(labels[0], bx - off - 2 * d, by + 4 * d, p)
+        if (labels[1].isNotEmpty()) c.drawText(labels[1], bx + off + 2 * d, by + 4 * d, p)
+        p.textAlign = Paint.Align.LEFT
+        if (labels[2].isNotEmpty()) c.drawText(labels[2], bx + 5 * d, by - radius * 0.62f, p)
+        if (labels[3].isNotEmpty()) c.drawText(labels[3], bx + 5 * d, by + radius * 0.62f + 8 * d, p)
+        p.style = Paint.Style.FILL
+    }
+
     fun draw(c: Canvas, p: Paint, d: Float, enabled: Boolean) {
         if (floating && !active) return
         val bx = if (floating) fx else cx
@@ -82,6 +120,7 @@ class AimStick {
             val ca = kotlin.math.cos(a); val sa = kotlin.math.sin(a)
             c.drawLine(bx + ca * radius * 0.82f, by + sa * radius * 0.82f, bx + ca * radius * 0.94f, by + sa * radius * 0.94f, p)
         }
+        axisCross(c, p, d, bx, by)
         val kx = bx + knobX * radius * 0.75f
         val ky = by + knobY * radius * 0.75f
         val kr = radius * 0.46f

@@ -49,7 +49,12 @@ class HudView(context: Context, private val ctl: GameController) : View(context)
     val touchAim: Float get() = stick.output
     /** -1..1 aim-point command (stick up = further down the hole). */
     val touchAimY: Float get() = stick.outputY
-    private val stick = AimStick()
+    private val stick = AimStick().also { it.labels = arrayOf("L", "R", "FAR", "NEAR"); it.accent = 0xFFFFD84A.toInt() }
+    /** Release stick: x = hyzer(-)/anhyzer(+), y = nose up(+)/down(-). */
+    private val relStick = AimStick().also { it.labels = arrayOf("HYZER", "ANHY", "NOSE UP", "DOWN"); it.accent = 0xFF6FE0FF.toInt() }
+    /** -1..1 release stick commands (x right = anhyzer, y up = nose up). */
+    val touchRelX: Float get() = relStick.output
+    val touchRelY: Float get() = relStick.outputY
 
     private class Pop(val ev: ProgressEvent, var age: Float = 0f)
     private val pops = ArrayList<Pop>()
@@ -71,10 +76,6 @@ class HudView(context: Context, private val ctl: GameController) : View(context)
     private val shapeNext = RectF()
     private val menuRect = RectF()
     private val handBtn = RectF()
-    private val angleMinus = RectF()
-    private val anglePlus = RectF()
-    private val tiltMinus = RectF()
-    private val tiltPlus = RectF()
     private val cardBtn = RectF()
     private val resumeBtn = RectF()
     private val quitBtn = RectF()
@@ -95,6 +96,7 @@ class HudView(context: Context, private val ctl: GameController) : View(context)
         L = HudLayout.compute(wf, hf, d)   // all panel rects come from this pure, unit-tested function
         actionC[0] = L.actionCx; actionC[1] = L.actionCy; actionC[2] = L.actionR
         stick.layout(70 * d, hf - 56 * d, 46 * d)
+        relStick.layout(HudLayout.REL_CX * d, hf - 56 * d, HudLayout.REL_R * d)
         cardRect.set(L.discCard.l, L.discCard.t, L.discCard.r, L.discCard.b)
         discPrev.set(cardRect.left, cardRect.top, cardRect.left + 40 * d, cardRect.bottom - 30 * d)
         discNext.set(cardRect.right - 40 * d, cardRect.top, cardRect.right, cardRect.bottom - 30 * d)
@@ -103,10 +105,6 @@ class HudView(context: Context, private val ctl: GameController) : View(context)
         // Throw panel: backhand / forehand, launch angle and release tilt, to the right of the aim stick.
         val tx0 = L.throwPanel.l + 5 * d; val tx1 = L.throwPanel.r - 5 * d; val rowH = 24 * d; val ty = L.throwPanel.t + 5 * d
         handBtn.set(tx0, ty, tx1, ty + rowH)
-        angleMinus.set(tx0 + 42 * d, ty + rowH + 3 * d, tx0 + 66 * d, ty + 2 * rowH + 3 * d)
-        anglePlus.set(tx1 - 24 * d, ty + rowH + 3 * d, tx1, ty + 2 * rowH + 3 * d)
-        tiltMinus.set(tx0 + 42 * d, ty + 2 * rowH + 6 * d, tx0 + 66 * d, ty + 3 * rowH + 6 * d)
-        tiltPlus.set(tx1 - 24 * d, ty + 2 * rowH + 6 * d, tx1, ty + 3 * rowH + 6 * d)
         menuRect.set(L.menu.l, L.menu.t, L.menu.r, L.menu.b)
         cardBtn.set(L.cardBtn.l, L.cardBtn.t, L.cardBtn.r, L.cardBtn.b)
         resumeBtn.set(wf / 2f - 110 * d, hf / 2f - 18 * d, wf / 2f + 110 * d, hf / 2f + 32 * d)
@@ -139,8 +137,10 @@ class HudView(context: Context, private val ctl: GameController) : View(context)
         when (e.actionMasked) {
             MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN -> down(id, e.getX(idx), e.getY(idx))
             MotionEvent.ACTION_UP, MotionEvent.ACTION_POINTER_UP -> up(id)
-            MotionEvent.ACTION_MOVE -> for (i in 0 until e.pointerCount) stick.move(e.getPointerId(i), e.getX(i), e.getY(i))
-            MotionEvent.ACTION_CANCEL -> { up(actionPointer); up(stick.pointer) }
+            MotionEvent.ACTION_MOVE -> for (i in 0 until e.pointerCount) {
+                stick.move(e.getPointerId(i), e.getX(i), e.getY(i)); relStick.move(e.getPointerId(i), e.getX(i), e.getY(i))
+            }
+            MotionEvent.ACTION_CANCEL -> { up(actionPointer); up(stick.pointer); up(relStick.pointer) }
         }
         return true
     }
@@ -161,15 +161,12 @@ class HudView(context: Context, private val ctl: GameController) : View(context)
             Phase.AIMING -> {
                 when {
                     !stick.active && stick.hitsFixed(x, y) -> stick.down(id, x, y, false)
+                    !relStick.active && relStick.hitsFixed(x, y) -> relStick.down(id, x, y, false)
                     discPrev.contains(x, y) -> onDisc(-1)
                     discNext.contains(x, y) -> onDisc(1)
                     shapePrev.contains(x, y) -> onShape(-1)
                     shapeNext.contains(x, y) -> onShape(1)
                     handBtn.contains(x, y) -> ctl.toggleForehand()
-                    angleMinus.contains(x, y) -> ctl.adjustAngle(-1)
-                    anglePlus.contains(x, y) -> ctl.adjustAngle(1)
-                    tiltMinus.contains(x, y) -> ctl.adjustTilt(-1)
-                    tiltPlus.contains(x, y) -> ctl.adjustTilt(1)
                     !stick.active && x < width * 0.35f && y > height * 0.3f -> stick.down(id, x, y, true)
                     x > width * 0.62f && y > height * 0.3f && actionPointer < 0 -> { actionPointer = id; onAction(true) }
                 }
@@ -183,7 +180,7 @@ class HudView(context: Context, private val ctl: GameController) : View(context)
     private fun up(id: Int) {
         if (id < 0) return
         if (id == actionPointer) { actionPointer = -1; onAction(false) }
-        stick.up(id)
+        stick.up(id); relStick.up(id)
     }
 
     // ------------------------------------------------------------------
@@ -646,17 +643,6 @@ class HudView(context: Context, private val ctl: GameController) : View(context)
         r.set(handBtn)
         pill(c, r, Color.parseColor(if (ctl.forehand) "#D9792B" else "#3A68B0"), Color.parseColor(if (ctl.forehand) "#8F4A12" else "#14396F"))
         text(c, if (ctl.forehand) "FOREHAND" else "BACKHAND", r.centerX(), r.centerY() + 5 * d, 13f, Ui.WHITE, Paint.Align.CENTER)
-        // launch angle
-        val labelX = handBtn.left + 2 * d
-        text(c, "ANGLE", labelX, angleMinus.centerY() + 4 * d, 10f, Ui.METAL, display = false)
-        text(c, String.format("%.0f°", ctl.launchAngleDeg), (angleMinus.right + anglePlus.left) / 2f, angleMinus.centerY() + 5 * d, 13f, Ui.WHITE, Paint.Align.CENTER)
-        smallButton(c, angleMinus, "−", a); smallButton(c, anglePlus, "+", a)
-        // release tilt
-        text(c, "TILT", labelX, tiltMinus.centerY() + 4 * d, 10f, Ui.METAL, display = false)
-        val tilt = ctl.releaseTiltDeg
-        val tl = if (tilt > 0.5f) String.format("H%.0f°", tilt) else if (tilt < -0.5f) String.format("A%.0f°", -tilt) else "0°"
-        text(c, tl, (tiltMinus.right + tiltPlus.left) / 2f, tiltMinus.centerY() + 5 * d, 13f, Ui.CYAN, Paint.Align.CENTER)
-        smallButton(c, tiltMinus, "−", a); smallButton(c, tiltPlus, "+", a)
     }
 
     private fun smallButton(c: Canvas, rect: RectF, label: String, alpha: Int) {
@@ -670,7 +656,16 @@ class HudView(context: Context, private val ctl: GameController) : View(context)
     }
 
     private fun drawAimButtons(c: Canvas) {
-        stick.draw(c, p, d, ctl.phase == Phase.AIMING)
+        val on = ctl.phase == Phase.AIMING
+        stick.draw(c, p, d, on)
+        relStick.draw(c, p, d, on)
+        // live readouts above each stick
+        val sy = stick.cy - stick.radius - 8 * d
+        text(c, String.format("H %+.0f°  V %.0fm", ctl.aimOffsetDeg, ctl.aimDistance), stick.cx, sy, 11f, Ui.GOLD, Paint.Align.CENTER, display = false)
+        val tilt = ctl.releaseTiltDeg
+        val tl = if (tilt > 0.5f) String.format("HYZ %.0f°", tilt) else if (tilt < -0.5f) String.format("ANHY %.0f°", -tilt) else "FLAT"
+        text(c, tl, relStick.cx, relStick.cy - relStick.radius - 20 * d, 11f, Ui.CYAN, Paint.Align.CENTER, display = false)
+        text(c, String.format("NOSE %.0f°", ctl.launchAngleDeg), relStick.cx, relStick.cy - relStick.radius - 8 * d, 11f, Ui.WHITE, Paint.Align.CENTER, display = false)
     }
 
     // (4) Hot Shots style swing dial: power ring fills clockwise, inner arc holds the accuracy needle, glossy cap shows % power

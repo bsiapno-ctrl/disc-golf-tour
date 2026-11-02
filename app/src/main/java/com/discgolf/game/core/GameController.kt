@@ -169,6 +169,20 @@ class GameController(
         dirty = true
     }
 
+    /** Analog release control: [hyzer] -1..1 (+ = hyzer, - = anhyzer), [nose] -1..1 (+ = nose up), [dt] seconds. Offsets persist. */
+    fun adjustRelease(hyzer: Float, nose: Float, dt: Float) {
+        if (phase != Phase.AIMING || (hyzer == 0f && nose == 0f)) return
+        bankOffset = (bankOffset + hyzer * 14f * dt).coerceIn(-16f, 16f)
+        elevOffset = (elevOffset + nose * 12f * dt).coerceIn(-6f, 14f)
+        dirty = true
+    }
+
+    /** Aim heading relative to the caddie's centre line, in degrees (+ = right), for display. */
+    val aimOffsetDeg: Float get() {
+        val centre = dirToHeading((aimTarget() - lie).flat().normalized())
+        return Math.toDegrees(angleDiff(aimHeading, centre).toDouble()).toFloat()
+    }
+
     /** Raise (+1) or lower (-1) the launch angle in 1-degree steps. */
     fun adjustAngle(dir: Int) {
         if (phase != Phase.AIMING) return

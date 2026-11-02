@@ -27,7 +27,7 @@ import kotlin.math.min
  *
  * Controller layout:
  *   A / Space / right trigger ....... hold to charge power, release to lock it, press again to stop the accuracy marker
- *   Left stick or keyboard A/D ...... aim turn; stick up/down or W/S + keyboard arrows = aim point
+ *   Left stick or keyboard A/D ...... aim turn; stick up/down or W/S = aim distance; right stick / arrow keys = release angle (L/R hyzer/anhyzer) and nose tilt (U/D)
  *   D-pad left/right or L1/R1 ....... change disc
  *   D-pad up/down ................... change shot shape (hyzer / flat / anhyzer)
  *   Y ............................... scorecard        Start / B / Back ... pause
@@ -41,6 +41,8 @@ class GameActivity : Activity() {
 
     private var lastNanos = 0L
     private var looping = false
+    private var keyRelX = 0
+    private var keyRelY = 0
     private var stickX = 0f
     private var stickY = 0f
     private var keyAimY = 0
@@ -146,6 +148,11 @@ class GameActivity : Activity() {
             val ay = (hud.touchAimY + keyAimY + stickY).coerceIn(-1f, 1f)
             if (ay != 0f) ctl.aimPoint(ay, dt)
 
+            val rh = (hud.touchRelX + keyRelX).coerceIn(-1f, 1f)
+            val rv = (hud.touchRelY + keyRelY).coerceIn(-1f, 1f)
+            // stick right = anhyzer (-), left = hyzer (+)
+            if (rh != 0f || rv != 0f) ctl.adjustRelease(-rh, rv, dt)
+
             ctl.update(dt)
 
             val ph = ctl.phase
@@ -187,19 +194,19 @@ class GameActivity : Activity() {
             KeyEvent.KEYCODE_BUTTON_L1, KeyEvent.KEYCODE_Q -> { if (e.repeatCount == 0) ctl.nextDisc(-1); return true }
             KeyEvent.KEYCODE_BUTTON_R1, KeyEvent.KEYCODE_E -> { if (e.repeatCount == 0) ctl.nextDisc(1); return true }
             KeyEvent.KEYCODE_DPAD_LEFT -> {
-                if (fromPad(e)) { if (e.repeatCount == 0) ctl.nextDisc(-1) } else keyAim = -1
+                if (fromPad(e)) { if (e.repeatCount == 0) ctl.nextDisc(-1) } else keyRelX = -1
                 return true
             }
             KeyEvent.KEYCODE_DPAD_RIGHT -> {
-                if (fromPad(e)) { if (e.repeatCount == 0) ctl.nextDisc(1) } else keyAim = 1
+                if (fromPad(e)) { if (e.repeatCount == 0) ctl.nextDisc(1) } else keyRelX = 1
                 return true
             }
             KeyEvent.KEYCODE_DPAD_UP -> {
-                if (fromPad(e)) { if (e.repeatCount == 0) ctl.nextShape(1) } else keyAimY = 1
+                if (fromPad(e)) { if (e.repeatCount == 0) ctl.nextShape(1) } else keyRelY = 1
                 return true
             }
             KeyEvent.KEYCODE_DPAD_DOWN -> {
-                if (fromPad(e)) { if (e.repeatCount == 0) ctl.nextShape(-1) } else keyAimY = -1
+                if (fromPad(e)) { if (e.repeatCount == 0) ctl.nextShape(-1) } else keyRelY = -1
                 return true
             }
             KeyEvent.KEYCODE_W -> { keyAimY = 1; return true }
@@ -215,9 +222,9 @@ class GameActivity : Activity() {
         when (keyCode) {
             KeyEvent.KEYCODE_BUTTON_A, KeyEvent.KEYCODE_BUTTON_X, KeyEvent.KEYCODE_BUTTON_R2,
             KeyEvent.KEYCODE_SPACE, KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_DPAD_CENTER -> { handleAction(false); return true }
-            KeyEvent.KEYCODE_DPAD_LEFT -> { if (!fromPad(e)) keyAim = 0; return true }
-            KeyEvent.KEYCODE_DPAD_RIGHT -> { if (!fromPad(e)) keyAim = 0; return true }
-            KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN -> { if (!fromPad(e)) keyAimY = 0; return true }
+            KeyEvent.KEYCODE_DPAD_LEFT -> { if (!fromPad(e)) keyRelX = 0; return true }
+            KeyEvent.KEYCODE_DPAD_RIGHT -> { if (!fromPad(e)) keyRelX = 0; return true }
+            KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN -> { if (!fromPad(e)) keyRelY = 0; return true }
             KeyEvent.KEYCODE_W, KeyEvent.KEYCODE_S -> { keyAimY = 0; return true }
             KeyEvent.KEYCODE_A, KeyEvent.KEYCODE_D -> { keyAim = 0; return true }
         }

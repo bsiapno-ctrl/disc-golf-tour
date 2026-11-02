@@ -198,7 +198,9 @@ void main() {
     vec3 sky = vec3(0.72, 0.82, 1.0);
     vec3 gnd = vec3(0.36, 0.40, 0.24);
     vec3 amb = mix(gnd, sky, n.y * 0.5 + 0.5) * 0.74;
-    vec3 lit = base * (amb + vec3(1.0, 0.96, 0.86) * diff * 0.80);
+    // Upward-facing leaf tops (what the top-down flight camera sees) get less sun so canopies do not blow out to neon.
+    float topK = mix(1.0, 0.62, smoothstep(0.55, 1.0, n.y) * (1.0 - isBark));
+    vec3 lit = base * (amb * mix(1.0, 0.85, 1.0 - topK + 0.0) + vec3(1.0, 0.96, 0.86) * diff * 0.80 * topK);
     // Warm rim of sun on the lit upper edge of each cluster.
     float rim = pow(1.0 - nv, 3.0) * max(dot(n, l), 0.0);
     lit += uLeafLight * rim * 0.20 * (1.0 - isBark);
@@ -206,7 +208,8 @@ void main() {
     float edge = smoothstep(0.30, 0.04, nv) * (1.0 - isBark);
     lit = mix(lit, uLeafDark * vec3(0.30, 0.38, 0.30) * uTint, edge * 0.60);
     float lm = dot(lit, vec3(0.3, 0.59, 0.11));
-    lit = mix(vec3(lm), lit, 1.22);
+    lit = mix(vec3(lm), lit, 1.02);
+    lit = min(lit, vec3(0.88));
     float fogAmt = smoothstep($FOG_START, $FOG_END, dist);
     fragColor = vec4(grade(mix(lit, uFogColor, fogAmt)), 1.0);
 }
