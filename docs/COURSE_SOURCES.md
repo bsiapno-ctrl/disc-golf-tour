@@ -157,3 +157,8 @@ strips, tight tree tunnels. This is INVENTED shaping done by tools/shape_holes.p
 courses: for Cypress Point Park only the lengths, pars and approximate tee/basket positions stay as described
 above (tee-to-basket distance and par are unchanged; the playing line is a few percent longer on doglegs), and the water,
 OB and bends there should not be read as real features. (Olympus was rebuilt separately, see its section.) The four "inspired" courses were already invented.
+
+### Olympus holes 1-9: first-person fly-through pass
+The Jomez MPO R1F9 video does open every hole with a first-person fly-through (hole/par/distance overlay + MPO layout map). Holes 1-9 STYLE entries
+(elevation stations, named oaks/pines, palmetto/wiregrass clumps, zones) were redone from those frames; per-hole notes and confidence in
+`tools/olympus_f9_notes.md`. Heights remain visual estimates.
