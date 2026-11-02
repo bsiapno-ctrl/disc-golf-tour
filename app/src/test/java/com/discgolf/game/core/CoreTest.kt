@@ -438,7 +438,7 @@ class CoreTest {
         g.toggleForehand(); g.nextShape(1); g.adjustAngle(3)
         g.update(0.2f)
         val endGuide = g.guide.last()
-        val sp = ThrowSpec(g.lie, g.aimHeading, g.disc, g.shape, g.isPutt, g.forehand, g.elevOffset, g.bankOffset)
+        val sp = ThrowSpec(g.lie, g.aimHeading, g.disc, g.shape, g.isPutt, g.forehand, g.elevOffset, g.bankOffset, g.aimPitchDeg)
         val f = Launcher.launch(g.profile, sp, WindOnly(g.wind, g.hole.terrain), minOf(g.pinPower, 1f), 0f, false, minOf(g.pinPower, 1f) >= SwingMeter.PERFECT_POWER)
         var n = 0
         while (f.state == FlightState.FLYING && n++ < 6000) f.step(Launcher.SIM_DT)
@@ -452,11 +452,23 @@ class CoreTest {
         assertEquals(Phase.AIMING, g.phase)
         repeat(200) { g.aimPoint(1f, 0.1f); g.update(0.1f) }
         assertEquals(GameController.MAX_AIM_DIST, g.aimDistance, 1e-4f)
-        assertTrue(g.aimPitch in 0.9f..1f)
         repeat(400) { g.aimPoint(-1f, 0.1f); g.update(0.1f) }
         assertEquals(GameController.MIN_AIM_DIST, g.aimDistance, 1e-4f)
-        assertTrue(g.aimPitch in -1f..-0.9f)
         g.aimDistance = 1000f
         assertEquals(GameController.MAX_AIM_DIST, g.aimDistance, 0f)
+    }
+
+    @Test fun adjustPitchLeavesAutoAndIsClamped() {
+        val g = GameController(golfer(), seed = 42L)
+        var n = 0
+        while (g.phase != Phase.AIMING && n++ < 2000) g.update(0.1f)
+        assertTrue(g.pitchIsAuto)
+        repeat(100) { g.adjustPitch(1f, 0.1f); g.update(0.1f) }
+        assertEquals(Launcher.MAX_PITCH_DEG, g.aimPitchDeg, 1e-4f)
+        assertTrue(!g.pitchIsAuto && g.aimPitch > 0.9f)
+        repeat(200) { g.adjustPitch(-1f, 0.1f); g.update(0.1f) }
+        assertEquals(Launcher.MIN_PITCH_DEG, g.aimPitchDeg, 1e-4f)
+        g.resetPitchAuto()
+        assertEquals(g.autoPitchDeg, g.aimPitchDeg, 0f)
     }
 }

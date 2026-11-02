@@ -1,5 +1,6 @@
 package com.discgolf.game.ui
 
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -94,5 +95,17 @@ class HudLayoutTest {
             val chip = HudLayout.puttChip(h, d)
             for ((n, rc) in HudLayout.compute(w, h, d).all()) assertTrue("chip overlaps $n at ${wDp}dp r=$ratio", !chip.intersects(rc))
         }
+    }
+
+    @Test fun elevChipSitsBelowDistChipAndFormatsSigned() {
+        for (wDp in 640..2200 step 40) for (ratio in floatArrayOf(1.3f, 1.78f, 2.17f, 2.4f)) {
+            val w = wDp * 2f; val h = w / ratio
+            val L = HudLayout.compute(w, h, HudLayout.scale(w, h, 2f))
+            assertTrue("elev ${L.elevChip} not below dist ${L.distChip}", L.elevChip.t >= L.distChip.b && L.elevChip.l == L.distChip.l)
+            for ((n, rc) in L.all()) if (n != "elevChip") assertTrue("elevChip overlaps $n $rc at ${wDp}dp r=$ratio", !L.elevChip.intersects(rc))
+        }
+        assertEquals("ELEV +6 m", HudLayout.elevText(5.6f))
+        assertEquals("ELEV 0 m", HudLayout.elevText(0.2f))
+        assertEquals("ELEV \u22123 m", HudLayout.elevText(-3.2f))
     }
 }

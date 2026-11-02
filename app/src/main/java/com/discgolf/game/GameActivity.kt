@@ -146,7 +146,7 @@ class GameActivity : Activity() {
             } else aimHold = 0f
 
             val ay = (hud.touchAimY + keyAimY + stickY).coerceIn(-1f, 1f)
-            if (ay != 0f) ctl.aimPoint(ay, dt)
+            if (ay != 0f) ctl.adjustPitch(ay, dt)   // stick up / W = aim higher
 
             val rh = (hud.touchRelX + keyRelX).coerceIn(-1f, 1f)
             val rv = (hud.touchRelY + keyRelY).coerceIn(-1f, 1f)

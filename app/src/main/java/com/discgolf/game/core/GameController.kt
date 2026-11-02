@@ -140,12 +140,36 @@ class GameController(
     var aimPitchTarget = 0f
         private set
 
-    /** Analog aim-point move: [amount] -1..1 (+ = further), [dt] seconds. Moves the aim marker and camera pitch. */
+    /** Analog aim-point move: [amount] -1..1 (+ = further), [dt] seconds. Moves the aim marker (the stick no longer drives this; pitch does). */
     fun aimPoint(amount: Float, dt: Float) {
         if (phase != Phase.AIMING || amount == 0f) return
         aimDistance = lookAhead + amount * AIM_DIST_SPEED * dt
-        aimPitchTarget = clamp(aimPitchTarget + amount * AIM_PITCH_SPEED * dt, -1f, 1f)
     }
+
+    /** Player-set aim pitch in degrees, or null for AUTO (point at the pin / aim spot's height). */
+    private var pitchManual: Float? = null
+
+    /** AUTO aim pitch: the slope angle from the lie to the pin (or the aim spot when the pin is far), clamped to the pitch range. */
+    val autoPitchDeg: Float get() {
+        val t = if (distanceToPin <= 70f) hole.basket else aimTarget()
+        return Launcher.autoPitchDeg(t.y - lie.y, lie.distanceXZ(t))
+    }
+
+    /** Aim pitch used for the throw, degrees above (+) / below (-) the usual launch angle. */
+    val aimPitchDeg: Float get() = (pitchManual ?: autoPitchDeg).coerceIn(Launcher.MIN_PITCH_DEG, Launcher.MAX_PITCH_DEG)
+    val pitchIsAuto: Boolean get() = pitchManual == null
+
+    /** Basket height minus lie height in metres (+ = uphill). */
+    val elevationToPin: Float get() = hole.basket.y - lie.y
+
+    /** Analog pitch control: [amount] -1..1 (+ = aim higher), [dt] seconds. Leaves AUTO. */
+    fun adjustPitch(amount: Float, dt: Float) {
+        if (phase != Phase.AIMING || amount == 0f) return
+        pitchManual = (aimPitchDeg + amount * PITCH_RATE_DEG * dt).coerceIn(Launcher.MIN_PITCH_DEG, Launcher.MAX_PITCH_DEG)
+        dirty = true
+    }
+
+    fun resetPitchAuto() { pitchManual = null; dirty = true }
 
     val par get() = hole.par
     val totalPar get() = course.sumOf { it.par }
@@ -315,7 +339,7 @@ class GameController(
     // Throwing
     // =====================================================================
 
-    private fun spec() = ThrowSpec(lie, aimHeading, disc, shape, isPutt, forehand, elevOffset, bankOffset)
+    private fun spec() = ThrowSpec(lie, aimHeading, disc, shape, isPutt, forehand, elevOffset, bankOffset, aimPitchDeg)
 
     private fun launch(m: SwingMeter) {
         preThrowPin = lie.distanceXZ(hole.basket)
@@ -511,7 +535,7 @@ class GameController(
             reach = max(reach, Launcher.carry(profile, ThrowSpec(lie, 0f, d, ShotShape.FLAT, false, forehand), windEnv, 1f))
         }
         lookAhead = clamp(reach * 0.8f, MIN_AIM_DIST, MAX_AIM_DIST)
-        aimPitchTarget = 0f
+        pitchManual = null
         val target = aimTarget()
         aimHeading = dirToHeading((target - lie).flat().normalized())
         shape = ShotShape.FLAT
@@ -527,7 +551,7 @@ class GameController(
             var pick: DiscModel? = null
             for (d in b) {
                 if (d.isPutter) continue
-                val c = Launcher.carry(profile, ThrowSpec(lie, aimHeading, d, ShotShape.FLAT, false, forehand), windEnv, 1f)
+                val c = Launcher.carry(profile, ThrowSpec(lie, aimHeading, d, ShotShape.FLAT, false, forehand, aimPitchDeg = aimPitchDeg), windEnv, 1f)
                 if (c > bestCarry) { bestCarry = c; best = d }
                 // Prefer the slowest disc that still gets there.
                 if (c >= want * 1.08f && (pick == null || d.speed < pick.speed)) pick = d
@@ -555,9 +579,9 @@ class GameController(
         var bestOff = 0f
         for (shp in CADDIE_SHAPES) {
           // Aim the power at the target for this shape so shapes are compared fairly.
-          val pw = min(Launcher.powerForDistance(profile, ThrowSpec(lie, baseHeading, disc, shp, false, forehand), windEnv, lie.distanceXZ(target)), 1f).let { if (it <= 0f) basePower else it }
+          val pw = min(Launcher.powerForDistance(profile, ThrowSpec(lie, baseHeading, disc, shp, false, forehand, aimPitchDeg = aimPitchDeg), windEnv, lie.distanceXZ(target)), 1f).let { if (it <= 0f) basePower else it }
           for (off in CADDIE_OFFSETS) {
-            val sp = ThrowSpec(lie, baseHeading + off * deg, disc, shp, false, forehand)
+            val sp = ThrowSpec(lie, baseHeading + off * deg, disc, shp, false, forehand, aimPitchDeg = aimPitchDeg)
             var total = 0f
             for (err in CADDIE_ERRS) {
                 val f = Launcher.launch(profile, sp, env, pw, err, false, false)
@@ -596,6 +620,8 @@ class GameController(
         val aimDir = headingToDir(aimHeading)
         val alongPin = max(0f, toPin.dot(aimDir))
         val targetDist = if (distanceToPin <= 70f || alongPin > 0.9f) distanceToPin * max(alongPin, 0.5f) else lie.distanceXZ(aimTarget())
+        // Camera tilt follows the aim pitch a little (-1..1 over the pitch range).
+        aimPitchTarget = clamp(aimPitchDeg / Launcher.MAX_PITCH_DEG, -1f, 1f)
         val sp = spec()
         pinPower = if (isPutt) Launcher.powerForPutt(profile, sp, windEnv, distanceToPin, hole.basket.y)
         else Launcher.powerForDistance(profile, sp, windEnv, targetDist)
@@ -649,7 +675,7 @@ class GameController(
         const val MIN_AIM_DIST = 55f
         const val MAX_AIM_DIST = 120f
         const val AIM_DIST_SPEED = 40f   // m/s at full deflection
-        const val AIM_PITCH_SPEED = 0.8f // pitch units/s at full deflection
+        const val PITCH_RATE_DEG = 14f   // aim pitch degrees/s at full stick deflection
         /** Inside this is circle 1: the short, high-percentage putt. */
         const val CIRCLE_1 = 10f
         private val CADDIE_SHAPES = listOf(ShotShape.FLAT, ShotShape.HYZER, ShotShape.ANHYZER)

@@ -49,15 +49,15 @@ class HudView(context: Context, private val ctl: GameController) : View(context)
 
     /** -1..1 aim stick command (0 when released). Read by the activity every frame. */
     val touchAim: Float get() = if (angleMode) 0f else stick.output
-    /** -1..1 aim-point command (stick up = further down the hole). */
+    /** -1..1 aim-pitch command (stick up = aim higher). */
     val touchAimY: Float get() = if (angleMode) 0f else stick.outputY
-    private val stick = AimStick().also { it.labels = arrayOf("L", "R", "FAR", "NEAR"); it.accent = 0xFFFFD84A.toInt() }
-    /** The one stick has two modes: AIM (heading / distance) and ANGLE (hyzer-anhyzer / nose). ANGLE is forced during RELEASE_ANGLE. */
+    private val stick = AimStick().also { it.labels = arrayOf("L", "R", "UP", "DOWN"); it.accent = 0xFFFFD84A.toInt() }
+    /** The one stick has two modes: AIM (heading / pitch) and ANGLE (hyzer-anhyzer / nose). ANGLE is forced during RELEASE_ANGLE. */
     private var manualAngle = false
     val angleMode: Boolean get() = ctl.phase == Phase.RELEASE_ANGLE || (manualAngle && ctl.phase == Phase.AIMING)
     private val chipRect = RectF()
     private val puttChipRect = RectF()
-    private val AIM_LABELS = arrayOf("L", "R", "FAR", "NEAR")
+    private val AIM_LABELS = arrayOf("L", "R", "UP", "DOWN")
     private val ANGLE_LABELS = arrayOf("HYZER", "ANHY", "NOSE UP", "DOWN")
     /** -1..1 release commands from the same stick while in ANGLE mode (x right = anhyzer, y up = nose up). */
     val touchRelX: Float get() = if (angleMode) stick.output else 0f
@@ -469,6 +469,10 @@ class HudView(context: Context, private val ctl: GameController) : View(context)
         c.restore()
         text(c, "${ctl.distanceToPin.toInt()} m", b.l + 34 * d, cy + 7 * d, 16f, Ui.WHITE, maxW = 38 * d)
         text(c, "PIN", b.r - 10 * d, cy + 4 * d, 9f, Color.parseColor("#D9FFE6"), Paint.Align.RIGHT, display = false)
+        // elevation chip: basket height minus lie height
+        val e = L.elevChip
+        toon(c, e, 9 * d, Color.parseColor("#3C86E6"), Color.parseColor("#14439A"))
+        text(c, HudLayout.elevText(ctl.elevationToPin), e.centerX(), e.centerY() + 4 * d, 11f, Ui.WHITE, Paint.Align.CENTER, display = false, maxW = e.width() - 6 * d)
     }
 
     // (5) strokes / par / total-vs-par panel
@@ -713,7 +717,7 @@ class HudView(context: Context, private val ctl: GameController) : View(context)
         val tilt = ctl.releaseTiltDeg
         val tl = if (tilt > 0.5f) String.format("HYZ %.0f°", tilt) else if (tilt < -0.5f) String.format("ANHY %.0f°", -tilt) else "FLAT"
         val s = if (ang) tl + String.format(" NOSE %.0f°", ctl.launchAngleDeg)
-                else String.format("H %+.0f° %.0fm", ctl.aimOffsetDeg, ctl.aimDistance)
+                else String.format("H %+.0f° V %+.0f°", ctl.aimOffsetDeg, ctl.aimPitchDeg)
         text(c, (if (ang) "ANGLE " else "AIM ") + s, chipRect.centerX(), chipRect.centerY() + 4 * d, 11f, col, Paint.Align.CENTER, display = false, maxW = chipRect.width() - 6 * d)
     }
 

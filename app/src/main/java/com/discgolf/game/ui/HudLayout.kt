@@ -15,13 +15,13 @@ class HRect(val l: Float, val t: Float, val r: Float, val b: Float) {
 
 /** Every HUD panel's bounds. [minimap] is null when there is no room for it. */
 class HudRects(
-    val holeBanner: HRect, val distChip: HRect, val scorePanel: HRect, val windPanel: HRect,
+    val holeBanner: HRect, val distChip: HRect, val elevChip: HRect, val scorePanel: HRect, val windPanel: HRect,
     val menu: HRect, val cardBtn: HRect, val minimap: HRect?, val discCard: HRect, val throwPanel: HRect,
     val meter: HRect, val meterHint: HRect, val pinChip: HRect, val stick: HRect, val action: HRect,
     val actionCx: Float, val actionCy: Float, val actionR: Float,
 ) {
     fun all(): List<Pair<String, HRect>> = listOfNotNull(
-        "holeBanner" to holeBanner, "distChip" to distChip, "scorePanel" to scorePanel, "windPanel" to windPanel,
+        "holeBanner" to holeBanner, "distChip" to distChip, "elevChip" to elevChip, "scorePanel" to scorePanel, "windPanel" to windPanel,
         "menu" to menu, "cardBtn" to cardBtn, minimap?.let { "minimap" to it }, "discCard" to discCard,
         "throwPanel" to throwPanel, "meter" to meter, "meterHint" to meterHint, "pinChip" to pinChip, "stick" to stick, "action" to action,
     )
@@ -39,6 +39,12 @@ object HudLayout {
     /** The "1 POWER - 2 RUN-UP - 3 RELEASE" step indicator, floating just above the swing dial's pin chip. */
     fun stepBar(meter: HRect, d: Float): HRect =
         HRect(meter.centerXf() - 88 * d, meter.t - 72 * d, meter.centerXf() + 68 * d, meter.t - 52 * d)
+
+    /** The ELEV chip text: basket height minus lie height, whole metres with a sign ("ELEV +6 m"). */
+    fun elevText(dy: Float): String {
+        val m = Math.round(dy)
+        return "ELEV " + (if (m > 0) "+$m" else if (m < 0) "\u2212${-m}" else "0") + " m"
+    }
 
     fun obChoice(w: Float, h: Float, d: Float): ObRects {
         val cx = w / 2f; val top = h * 0.20f
@@ -70,6 +76,7 @@ object HudLayout {
         return HudRects(
             holeBanner = HRect(12 * d, 10 * d, 222 * d, 70 * d),
             distChip = HRect(w - 228 * d, 108 * d, w - 130 * d, 136 * d),
+            elevChip = HRect(w - 228 * d, 140 * d, w - 130 * d, 158 * d),
             scorePanel = HRect(12 * d, 76 * d, 222 * d, 124 * d),
             windPanel = HRect(w - 228 * d, 10 * d, w - 136 * d, 102 * d),
             menu = HRect(w - 126 * d, 10 * d, w - 12 * d, 46 * d),

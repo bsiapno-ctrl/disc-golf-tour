@@ -261,6 +261,11 @@ class ThrowSpec(
     val elevOffsetDeg: Float = 0f,
     /** Fine adjustment of the release tilt, in degrees toward hyzer (+) or anhyzer (-). */
     val bankOffsetDeg: Float = 0f,
+    /**
+     * Aim pitch (loft): degrees the whole throw is aimed above (+) or below (-) horizontal. Unlike [elevOffsetDeg]
+     * (the disc's nose attitude trim) this raises the launch direction itself, for uphill / downhill lines and clearing obstacles.
+     */
+    val aimPitchDeg: Float = 0f,
 )
 
 object Launcher {
@@ -272,6 +277,16 @@ object Launcher {
     const val FOREHAND_YAW = 1.18f
     const val MAX_ELEV_DEG = 22f
     const val MIN_ELEV_DEG = -4f
+    /** Aim pitch range offered to the player (degrees above / below the usual launch angle). */
+    const val MIN_PITCH_DEG = -10f
+    const val MAX_PITCH_DEG = 25f
+    /** Hard limit on the total launch elevation once aim pitch is added. */
+    const val MAX_TOTAL_ELEV_DEG = 45f
+    const val MIN_TOTAL_ELEV_DEG = -14f
+
+    /** The pitch (degrees) that points the throw at a target [dy] metres above the lie and [dist] metres away. 0 on the flat. */
+    fun autoPitchDeg(dy: Float, dist: Float): Float =
+        Math.toDegrees(atan2(dy.toDouble(), max(dist, 1f).toDouble())).toFloat().coerceIn(MIN_PITCH_DEG, MAX_PITCH_DEG)
 
     /** Release speed in m/s for a given power 0..1. */
     fun launchSpeed(p: PlayerProfile, spec: ThrowSpec, power: Float, perfect: Boolean): Float {
@@ -313,7 +328,9 @@ object Launcher {
         val heading = spec.aimHeading + accErr * maxYaw + jitter + flare
         val bank = ((spec.shape.bankDegrees + spec.bankOffsetDeg) * deg + accErr * 8f * deg - flare * 1.2f).coerceIn(Tuning.bankMin, Tuning.bankMax)
         val baseElev = (if (spec.isPutt) Tuning.puttElevDeg else Tuning.driveElevDeg) + spec.shape.elevDegrees
-        val elev = (baseElev + spec.elevOffsetDeg).coerceIn(MIN_ELEV_DEG, MAX_ELEV_DEG) * deg
+        // Aim pitch lifts the launch direction (and the nose with it); the nose trim above stays the disc's attitude.
+        val elev = ((baseElev + spec.elevOffsetDeg).coerceIn(MIN_ELEV_DEG, MAX_ELEV_DEG) + spec.aimPitchDeg.coerceIn(MIN_PITCH_DEG, MAX_PITCH_DEG))
+            .coerceIn(MIN_TOTAL_ELEV_DEG, MAX_TOTAL_ELEV_DEG) * deg
         val nose = elev + (spec.shape.noseDegrees + Tuning.noseOverElevDeg) * deg
 
         val speed = launchSpeed(p, spec, power, perfect)
