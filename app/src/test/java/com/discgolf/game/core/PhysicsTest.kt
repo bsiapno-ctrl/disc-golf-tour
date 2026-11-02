@@ -70,6 +70,45 @@ class PhysicsTest {
         }
     }
 
+    @Test fun moreUnderstableDiscsTurnFurtherAndOverstableOnesFadeMore() {
+        val drifter = fly(DiscModel.DRIFTER); val anvil = fly(DiscModel.ANVIL)
+        assertTrue("drifter ${drifter.maxRight} vs anvil ${anvil.maxRight}", drifter.maxRight > anvil.maxRight + 5f && drifter.maxRight > 8f)
+        val comet = fly(DiscModel.COMET); val wraith = fly(DiscModel.WRAITH)
+        assertTrue("comet ${comet.maxRight} finish ${comet.x}", comet.maxRight > 5f && comet.x > wraith.x + 10f)
+        assertTrue("wraith fades left ${wraith.x}", wraith.x < -10f)
+    }
+
+    @Test fun anhyzerTurnsFurtherAndHyzerFadesMoreOnEveryDisc() {
+        for (d in DiscModel.values()) {
+            val flat = fly(d).x
+            assertTrue("${d.displayName} anhyzer", fly(d, ShotShape.ANHYZER).x > flat + 3f)
+            assertTrue("${d.displayName} hyzer", fly(d, ShotShape.HYZER).x < flat - 5f)
+        }
+    }
+
+    @Test fun parThreeDistancesAreReachableWithMidrangesAtSensiblePower() {
+        val p = mid()
+        for (dist in listOf(45f, 60f, 75f, 85f)) {
+            val spec = ThrowSpec(Vec3.ZERO, 0f, DiscModel.ANVIL, ShotShape.FLAT, false)
+            val pw = Launcher.powerForDistance(p, spec, EmptyField, dist)
+            assertTrue("anvil $dist m needs power $pw", pw <= 1f)
+            if (dist <= 60f) assertTrue("anvil $dist m should not need full power ($pw)", pw < 0.85f)
+        }
+        val dr = Launcher.powerForDistance(p, ThrowSpec(Vec3.ZERO, 0f, DiscModel.DRIFTER, ShotShape.FLAT, false), EmptyField, 70f)
+        assertTrue("drifter 70 m power $dr", dr <= 1f)
+    }
+
+    @Test fun powerGivesMonotonicallyMoreAirDistance() {
+        for (d in DiscModel.values()) {
+            var last = -1f
+            for (pw in listOf(0.3f, 0.5f, 0.7f, 0.9f, 1f)) {
+                val a = fly(d, power = pw).air
+                assertTrue("${d.displayName} at $pw: $a <= $last", a > last)
+                last = a
+            }
+        }
+    }
+
     @Test fun aFlatPutterGoesStraight() {
         val r = fly(DiscModel.DART)
         assertTrue("dart ended ${r.x}", Math.abs(r.x) < 5f)

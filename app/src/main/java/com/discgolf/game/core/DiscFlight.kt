@@ -116,7 +116,8 @@ class DiscFlight(
 
         // Roll dynamics: fast = turns over, slow = fades. Spin steadies it.
         val s = speed / disc.idealSpeed
-        val turnMag = -disc.turn
+        // Turn grows faster than linearly so a -3 disc is clearly more understable than a -2.
+        val turnMag = -disc.turn * (Tuning.turnCurveBase + Tuning.turnCurveGain * -disc.turn)
         val high = smoothstep(0.80f, 1.15f, s) + max(0f, s - 1.15f) * 1.4f
         if (launchSpeed < 0f) launchSpeed = speed
         // Fade comes on when the disc is slow for its type, or simply after it has shed a good share of its launch speed.
@@ -216,13 +217,15 @@ object Tuning {
     var cd0 = 0.0227f
     var cdQuad = 2.5f
     var kTurn = 0.070f
+    var turnCurveBase = 0.70f
+    var turnCurveGain = 0.50f
     var kFade = 0.161f
     var fadeBase = 0f
     var fadeFloor = 4.0f
     var clockLo = 0.40f
     var clockHi = 0.65f
     /** How quickly the bank relaxes to the fade bank, per second at low speed. */
-    var kRestore = 2.72f
+    var kRestore = 3.6f
     var lowLo = 0.13f
     var lowHi = 0.38f
     var driveElevDeg = 6f
