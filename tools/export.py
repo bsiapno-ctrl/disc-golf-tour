@@ -1,7 +1,11 @@
 import sys, os; sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from rig import *
+import motions as M
+from motions import *  # noqa
 
-OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "app/src/main/assets/characters")
+OUT = os.environ.get("OUT") or os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "app/src/main/assets/characters")
+ONLY = os.environ.get("ONLY")   # comma list of clip names, for quick iterations
+ONLY = ONLY.split(",") if ONLY else None
 os.makedirs(OUT, exist_ok=True)
 chars = sys.argv[sys.argv.index("--")+1:] if "--" in sys.argv else sys.argv[1:]
 FPS = 30
@@ -10,25 +14,30 @@ RELEASE_T = 0.26 / 0.70
 
 def build_actions(arm):
     for a in list(bpy.data.actions): bpy.data.actions.remove(a)
-    def clip(name, frames, off=0):
+    def clip(name, frames, off=0, solver=None):
+        if ONLY and name not in ONLY: return
+        solver = solver or pose
         frames = [(fr + off, P) for fr, P in frames]
         act = bpy.data.actions.new(name); arm.animation_data.action = act
         for fr, P in frames:
-            pose(arm, P); key(arm, fr)
+            solver(arm, P); key(arm, fr)
         arm.animation_data.action = None
         tr = arm.animation_data.nla_tracks.new(); tr.name = name
         st = tr.strips.new(name, int(frames[0][0]), act); st.extrapolation = 'NOTHING'; st.blend_type = 'REPLACE'
-    clip("Windup_BH", [(1, windup(BH, 0)), (2, windup(BH, 1))])
-    clip("Windup_FH", [(1, windup(FH, 0)), (2, windup(FH, 1))])
-    clip("Idle", [(1 + i, idle_pose(True, i)) for i in range(60)])
     n = 22
-    clip("Throw_BH", [(1 + i, swing_pose(BH, i / (n - 1), RELEASE_T)) for i in range(n)])
-    clip("Runup_BH", [(1 + i, runup_pose(BH, i)) for i in range(RUN_N)], 200)
-    clip("Runup_FH", [(1 + i, runup_pose(FH, i)) for i in range(RUN_N)], 300)
-    clip("Runup", [(1 + i, runup_pose(BH, i)) for i in range(RUN_N)], 400)
+    clip("Idle", [(1 + i, idle_pose(True, i)) for i in range(60)])
+    base = 0
+    for sfx in ("BH", "FH"):
+        S = M.SETS.get(sfx)
+        if S is None: continue
+        clip("Windup_" + sfx, [(1, M.windup(S, 0)), (2, M.windup(S, 1))], solver=pose2)
+        clip("Throw_" + sfx, [(1 + i, M.at(S, M.T0 + i)) for i in range(n)], solver=pose2)
+        clip("Runup_" + sfx, [(1 + i, M.at(S, i)) for i in range(RUN_N)], 200 if sfx == "BH" else 300, solver=pose2)
+        if sfx == "BH": clip("Runup", [(1 + i, M.at(S, i)) for i in range(RUN_N)], 400, solver=pose2)
     clip("Cheer", [(1 + i, cheer_pose(i)) for i in range(36)], 500)
     clip("Groan", [(1 + i, groan_pose(i)) for i in range(40)], 600)
-    clip("Throw_FH", [(1 + i, swing_pose(FH, i / (n - 1), RELEASE_T)) for i in range(n)])
+    for name, (S, nf, off) in M.PUTTS.items():
+        clip(name, [(1 + i, M.putt_at(S, i, nf)) for i in range(nf)], off, solver=pose2)
 
 for ch in chars:
     arm = setup()
@@ -44,7 +53,11 @@ for ch in chars:
         bsdf.inputs['Base Color'].default_value = col
         bsdf.inputs['Roughness'].default_value = 1.0
         nt.links.new(bsdf.outputs['BSDF'], out.inputs['Surface'])
+    for o in bpy.data.objects:
+        if o.type == 'MESH': o.hide_viewport = True   # keep the depsgraph light while posing
     build_actions(arm)
+    for o in bpy.data.objects:
+        if o.type == 'MESH': o.hide_viewport = False
     bpy.ops.object.mode_set(mode='OBJECT')
     bpy.ops.object.select_all(action='DESELECT')
     arm.select_set(True)
