@@ -162,3 +162,7 @@ OB and bends there should not be read as real features. (Olympus was rebuilt sep
 The Jomez MPO R1F9 video does open every hole with a first-person fly-through (hole/par/distance overlay + MPO layout map). Holes 1-9 STYLE entries
 (elevation stations, named oaks/pines, palmetto/wiregrass clumps, zones) were redone from those frames; per-hole notes and confidence in
 `tools/olympus_f9_notes.md`. Heights remain visual estimates.
+
+### Olympus back nine fly-throughs (holes 10-18)
+
+Correction to earlier notes: the Jomez MPO R1B9 video (coQSmIg0gxY) opens every hole with a ~20-25 s first-person fly-through (chapter start + ~1 s, with an MPO layout mini-map and a title overlay). Holes 14-16 are clear there. Per-hole elevation, tree and ground notes derived from it are in tools/olympus_b9_notes.md and encoded in the STYLE entries 10-18 of tools/olympus_spec.py.
