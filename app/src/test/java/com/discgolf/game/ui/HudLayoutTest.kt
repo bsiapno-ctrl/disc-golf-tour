@@ -79,4 +79,20 @@ class HudLayoutTest {
             assertTrue("banner overlaps buttons", !o.banner.intersects(o.lieBtn) && !o.banner.intersects(o.rethrowBtn))
         }
     }
+
+    @Test fun puttStepLabelsSkipTheRunup() {
+        assertTrue(HudLayout.stepLabels(false, false) == listOf("1 POWER", "2 RUN-UP", "3 RELEASE"))
+        assertTrue(HudLayout.stepLabels(false, true) == listOf("1 POWER", "2 RUN-UP", "3 RELEASE"))   // style ignored off the green
+        assertTrue(HudLayout.stepLabels(true, false) == listOf("1 POWER", "2 RELEASE"))
+        assertTrue(HudLayout.stepLabels(true, true) == listOf("1 POWER", "2 JUMP", "3 RELEASE"))
+    }
+
+    @Test fun puttStyleChipClearOfOtherPanels() {
+        for (wDp in 640..2200 step 80) for (den in floatArrayOf(1f, 2f, 3f)) for (ratio in floatArrayOf(1.3f, 1.78f, 2.17f)) {
+            val w = wDp * den; val h = w / ratio
+            val d = HudLayout.scale(w, h, den)
+            val chip = HudLayout.puttChip(h, d)
+            for ((n, rc) in HudLayout.compute(w, h, d).all()) assertTrue("chip overlaps $n at ${wDp}dp r=$ratio", !chip.intersects(rc))
+        }
+    }
 }

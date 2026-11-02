@@ -55,6 +55,7 @@ class HudView(context: Context, private val ctl: GameController) : View(context)
     private var manualAngle = false
     val angleMode: Boolean get() = ctl.phase == Phase.RELEASE_ANGLE || (manualAngle && ctl.phase == Phase.AIMING)
     private val chipRect = RectF()
+    private val puttChipRect = RectF()
     private val AIM_LABELS = arrayOf("L", "R", "FAR", "NEAR")
     private val ANGLE_LABELS = arrayOf("HYZER", "ANHY", "NOSE UP", "DOWN")
     /** -1..1 release commands from the same stick while in ANGLE mode (x right = anhyzer, y up = nose up). */
@@ -102,6 +103,7 @@ class HudView(context: Context, private val ctl: GameController) : View(context)
         actionC[0] = L.actionCx; actionC[1] = L.actionCy; actionC[2] = L.actionR
         stick.layout(70 * d, hf - 56 * d, 46 * d)
         chipRect.set(70 * d - 62 * d, hf - 122 * d, 70 * d + 62 * d, hf - 104 * d)
+        HudLayout.puttChip(hf, d).let { puttChipRect.set(it.l, it.t, it.r, it.b) }
         cardRect.set(L.discCard.l, L.discCard.t, L.discCard.r, L.discCard.b)
         discPrev.set(cardRect.left, cardRect.top, cardRect.left + 40 * d, cardRect.bottom - 30 * d)
         discNext.set(cardRect.right - 40 * d, cardRect.top, cardRect.right, cardRect.bottom - 30 * d)
@@ -165,6 +167,7 @@ class HudView(context: Context, private val ctl: GameController) : View(context)
         when (ctl.phase) {
             Phase.AIMING -> {
                 when {
+                    ctl.isPutt && puttChipRect.contains(x, y) -> ctl.togglePuttStyle()
                     chipRect.contains(x, y) -> manualAngle = !manualAngle
                     !stick.active && stick.hitsFixed(x, y) -> stick.down(id, x, y, false)
                     discPrev.contains(x, y) -> onDisc(-1)
@@ -177,7 +180,7 @@ class HudView(context: Context, private val ctl: GameController) : View(context)
                 }
             }
             Phase.RELEASE_ANGLE -> if (!stick.active && stick.hitsFixed(x, y)) stick.down(id, x, y, false) else onAction(true)
-            Phase.RUNUP -> onAction(true)   // tap anywhere
+            Phase.RUNUP, Phase.JUMP -> onAction(true)   // tap anywhere
             Phase.INTRO, Phase.RESULT, Phase.HOLE_DONE -> onAction(true)
             Phase.OB_CHOICE -> {
                 val o = HudLayout.obChoice(width.toFloat(), height.toFloat(), d)
@@ -326,9 +329,10 @@ class HudView(context: Context, private val ctl: GameController) : View(context)
                 Phase.AIMING -> "HOLD"
                 Phase.POWER -> "RELEASE"
                 Phase.RUNUP -> "STEP!"
+                Phase.JUMP -> "JUMP!"
                 else -> "TAP!"
             }
-            roundButton(c, actionC[0], actionC[1], actionC[2], label, phase != Phase.AIMING, if (phase == Phase.RUNUP || phase == Phase.RELEASE_ANGLE) Ui.ORANGE else Ui.GOLD)
+            roundButton(c, actionC[0], actionC[1], actionC[2], label, phase != Phase.AIMING, if (phase == Phase.RUNUP || phase == Phase.JUMP || phase == Phase.RELEASE_ANGLE) Ui.ORANGE else Ui.GOLD)
         }
 
         when (phase) {
@@ -674,6 +678,7 @@ class HudView(context: Context, private val ctl: GameController) : View(context)
         stick.labels = if (ang) ANGLE_LABELS else AIM_LABELS
         stick.accent = if (ang) 0xFF6FE0FF.toInt() else 0xFFFFD84A.toInt()
         stick.draw(c, p, d, on || ctl.phase == Phase.RELEASE_ANGLE)
+        if (ctl.isPutt) drawPuttStyleChip(c)
         // mode chip (tap toggles AIM / ANGLE) with the live readout of the active mode
         val col = if (ang) Ui.CYAN else Ui.GOLD
         p.style = Paint.Style.FILL; p.color = 0xCC061028.toInt()
@@ -688,13 +693,25 @@ class HudView(context: Context, private val ctl: GameController) : View(context)
         text(c, (if (ang) "ANGLE " else "AIM ") + s, chipRect.centerX(), chipRect.centerY() + 4 * d, 11f, col, Paint.Align.CENTER, display = false, maxW = chipRect.width() - 6 * d)
     }
 
+    /** STAND / JUMP putt-style chip: shown for putts, tappable while aiming. */
+    private fun drawPuttStyleChip(c: Canvas) {
+        val jump = ctl.puttStyle == ThrowTiming.PuttStyle.JUMP
+        val col = if (jump) Ui.ORANGE else Ui.CYAN
+        p.style = Paint.Style.FILL; p.color = 0xCC061028.toInt()
+        c.drawRoundRect(puttChipRect, 9 * d, 9 * d, p)
+        p.style = Paint.Style.STROKE; p.strokeWidth = 2f * d; p.color = col
+        c.drawRoundRect(puttChipRect, 9 * d, 9 * d, p)
+        p.style = Paint.Style.FILL
+        text(c, if (jump) "JUMP" else "STAND", puttChipRect.centerX(), puttChipRect.centerY() + 4 * d, 11f, col, Paint.Align.CENTER, display = false, maxW = puttChipRect.width() - 6 * d)
+    }
+
     // (4) Hot Shots style swing dial: power ring fills clockwise, inner arc holds the accuracy needle, glossy cap shows % power
     private fun drawMeter(c: Canvas) {
         val phase = ctl.phase
         val m = ctl.meter
         val M = L.meter
         val power = if (m != null && phase.isThrowStep) m.power else 0f
-        val runPhase = phase == Phase.RUNUP
+        val runPhase = phase == Phase.RUNUP || phase == Phase.JUMP
         val relPhase = phase == Phase.RELEASE_ANGLE
         val accPhase = runPhase || relPhase
         drawStepBar(c)
@@ -721,7 +738,8 @@ class HudView(context: Context, private val ctl: GameController) : View(context)
         if (runPhase && m != null) {
             // STEP 2 ring: a dark track with the run-up sweet zone (cyan) and the marker riding round it.
             p.color = Color.argb(200, 6, 16, 40); c.drawArc(r, 0f, 360f, false, p)
-            val zc0 = ThrowTiming.RUNUP_CENTER; val zh = m.runupHalfWidth
+            val jmp = phase == Phase.JUMP
+            val zc0 = if (jmp) ThrowTiming.JUMP_CENTER else ThrowTiming.RUNUP_CENTER; val zh = if (jmp) m.jumpHalfWidth else m.runupHalfWidth
             p.color = Color.argb(255, 60, 220, 255)
             c.drawArc(r, -90f + 360f * (zc0 - zh), 360f * zh * 2f, false, p)
             p.strokeWidth = 2 * d; p.color = Color.WHITE
@@ -736,7 +754,7 @@ class HudView(context: Context, private val ctl: GameController) : View(context)
             c.drawArc(r, -90f + 360f * a0, 360f * (a1 - a0), false, p)
         }
         if (runPhase && m != null) {
-            val ma = Math.toRadians((-90f + 360f * clamp(m.runupMarker, 0f, 1f)).toDouble())
+            val ma = Math.toRadians((-90f + 360f * clamp(if (phase == Phase.JUMP) m.jumpMarker else m.runupMarker, 0f, 1f)).toDouble())
             val mc = cos(ma).toFloat(); val ms = sin(ma).toFloat()
             p.strokeCap = Paint.Cap.ROUND
             p.strokeWidth = 6 * d; p.color = Color.argb(240, 6, 16, 40)
@@ -814,6 +832,7 @@ class HudView(context: Context, private val ctl: GameController) : View(context)
             Phase.AIMING -> "HOLD, THEN RELEASE"
             Phase.POWER -> if (m != null && m.power >= 1f) "TOO LATE!" else "1 · RELEASE AT THE MARK"
             Phase.RUNUP -> if (m != null && m.inStartDelay) "2 · RUN UP..." else "2 · TAP IN THE CYAN"
+            Phase.JUMP -> if (m != null && m.inStartDelay) "2 · CROUCH..." else "2 · JUMP IN THE CYAN"
             else -> if (m != null && m.inStartDelay) "3 · READY..." else "3 · TAP IN THE GOLD"
         }
         val H = L.meterHint
@@ -825,11 +844,12 @@ class HudView(context: Context, private val ctl: GameController) : View(context)
     private fun drawStepBar(c: Canvas) {
         val B = HudLayout.stepBar(L.meter, d)
         val phase = ctl.phase
-        val cur = when (phase) { Phase.POWER -> 0; Phase.RUNUP -> 1; Phase.RELEASE_ANGLE -> 2; else -> -1 }
-        val labels = arrayOf("1 POWER", "2 RUN-UP", "3 RELEASE")
+        val labels = HudLayout.stepLabels(ctl.isPutt, ctl.puttStyle == ThrowTiming.PuttStyle.JUMP)
+        val n = labels.size
+        val cur = when (phase) { Phase.POWER -> 0; Phase.RUNUP, Phase.JUMP -> 1; Phase.RELEASE_ANGLE -> n - 1; else -> -1 }
         val gap = 4 * d
-        val pw = (B.w - gap * 2f) / 3f
-        for (i in 0..2) {
+        val pw = (B.w - gap * (n - 1)) / n
+        for (i in 0 until n) {
             val x0 = B.l + i * (pw + gap)
             val rc = HRect(x0, B.t, x0 + pw, B.b)
             val active = i == cur

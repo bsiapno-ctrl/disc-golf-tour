@@ -73,10 +73,15 @@ class SkinnedGolfer(private val context: Context) {
         look: Appearance, rightHanded: Boolean, x: Float, y: Float, z: Float, headingDeg: Float,
         forehand: Boolean, power: Float, swingTime: Float, holdUntil: Float, tiltDeg: Float, discOut: FloatArray,
         runupT: Float = -1f,
+        /** 0 = not a putt, 1 = standstill putt, 2 = jump putt. [puttT] is 0..1 progress through the jump step (-1 = none). */
+        puttKind: Int = 0, puttT: Float = -1f,
     ): Boolean {
         val name = nameFor(look)
         val m = model(name) ?: return false
         val sfx = if (forehand) "FH" else "BH"
+        // Putt clips are authored separately; any that are missing fall back to the normal windup / throw clips (never a crash).
+        val puttName = when (puttKind) { 1 -> "Putt_Stand"; 2 -> "Putt_Jump"; else -> null }
+        val puttClip = puttName?.let { n -> m.clips["${n}_$sfx"] ?: m.clips[n] }
         val windup = m.clips["Windup_$sfx"] ?: return false
         val throwClip = m.clips["Throw_$sfx"] ?: return false
         val a = pa.getOrPut(m) { m.newPose() }; val b = pb.getOrPut(m) { m.newPose() }; val out = pc.getOrPut(m) { m.newPose() }
@@ -84,10 +89,20 @@ class SkinnedGolfer(private val context: Context) {
         // Step 2 (run-up): play the run-up clip along the timing marker when the character has one,
         // otherwise hold the power-sized windup. Looked up by name so characters without it still work.
         val runup = if (runupT >= 0f) (m.clips["Runup_$sfx"] ?: m.clips["Runup"] ?: m.clips["RunUp_$sfx"] ?: m.clips["RunUp"]) else null
-        if (runup != null) m.sample(a, runup, runupT.coerceIn(0f, 1f) * runup.duration)
+        // Putt clips are one clip split in half: the first half is the pre-release pose (driven by power; for Putt_Jump
+        // the power charge covers 0..25% of the clip and the jump marker 25..50%), the second half is the release, played by swingTime.
+        val usePutt = puttClip != null && puttClip.duration > 0f
+        if (usePutt) {
+            val pc = puttClip!!
+            val pre = if (puttKind == 2) {
+                if (puttT >= 0f) 0.25f + 0.25f * puttT.coerceIn(0f, 1f) else 0.25f * power.coerceIn(0f, 1f)
+            } else 0.5f * power.coerceIn(0f, 1f)
+            m.sample(a, pc, pre * pc.duration)
+        } else if (runup != null) m.sample(a, runup, runupT.coerceIn(0f, 1f) * runup.duration)
         else m.sample(a, windup, power.coerceIn(0f, 1f) * windup.duration)
         if (swingTime >= 0f) {
-            m.sample(b, throwClip, swingTime)
+            if (usePutt) { val pc = puttClip!!; m.sample(b, pc, 0.5f * pc.duration + swingTime) }
+            else m.sample(b, throwClip, swingTime)
             val w = (swingTime / 0.12f).coerceIn(0f, 1f).let { it * it * (3f - 2f * it) }
             m.blend(out, a, b, w)
         } else m.blend(out, a, a, 0f)

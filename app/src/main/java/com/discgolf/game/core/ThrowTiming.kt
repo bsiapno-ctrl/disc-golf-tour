@@ -12,6 +12,22 @@ import kotlin.math.pow
  * Higher power makes the zones narrower and the markers faster (harder): a full-power drive is the hardest release.
  */
 object ThrowTiming {
+    /** How a putt is taken. Putts never use the run-up. STAND = feet planted (power, release). JUMP = a hop putt (power, jump, release). */
+    enum class PuttStyle { STAND, JUMP }
+
+    /** The jump-timing sweet zone is centred at the top of the hop, a little before the end of the sweep. */
+    const val JUMP_CENTER = 0.65f
+    /** Most extra reach (fraction of power) a perfectly timed hop adds, and most a badly mistimed one costs. */
+    const val JUMP_MAX_BONUS = 0.05f
+    const val JUMP_MAX_PENALTY = 0.12f
+    /** How much of the jump miss leaks into the release error (-1..1 scale). */
+    const val JUMP_LEAK = 0.20f
+    /** Pause (s) after the power lock before the jump marker starts moving. */
+    const val JUMP_START_DELAY = 0.25f
+    /** A jump putt makes the release zone this much narrower and its marker this much faster. */
+    const val JUMP_ZONE_MUL = 0.82f
+    const val JUMP_SPEED_MUL = 0.88f
+
     /** The run-up sweet zone is centred late in the sweep: the golfer plants the last step just before the release. */
     const val RUNUP_CENTER = 0.75f
     /** The release-angle sweet zone is dead centre; left of it is anhyzer, right of it is hyzer. */
@@ -37,13 +53,32 @@ object ThrowTiming {
     private fun puttZone(isPutt: Boolean, circle1: Boolean) = if (!isPutt) 1f else if (circle1) 1.25f else 1.1f
     private fun puttSlow(isPutt: Boolean, circle1: Boolean) = if (!isPutt) 1f else if (circle1) 1.35f else 1.15f
 
-    /** Half-width of the release-angle sweet zone, as a fraction of the bar (0.5 would be the whole bar). */
-    fun releaseHalfWidth(accuracy01: Float, power01: Float, isPutt: Boolean = false, circle1: Boolean = false): Float =
-        lerp(0.100f, 0.170f, accuracy01) * (1f - 0.30f * c01(power01)) * puttZone(isPutt, circle1)
+    private fun styleZone(isPutt: Boolean, style: PuttStyle) = if (isPutt && style == PuttStyle.JUMP) JUMP_ZONE_MUL else 1f
+    private fun styleSpeed(isPutt: Boolean, style: PuttStyle) = if (isPutt && style == PuttStyle.JUMP) JUMP_SPEED_MUL else 1f
 
-    /** Seconds for the release marker to cross the whole bar. */
-    fun releaseSweepSeconds(accuracy01: Float, power01: Float, isPutt: Boolean = false, circle1: Boolean = false): Float =
-        lerp(1.10f, 1.60f, accuracy01) * (1f - 0.30f * c01(power01)) * puttSlow(isPutt, circle1)
+    /** Half-width of the release-angle sweet zone, as a fraction of the bar (0.5 would be the whole bar). A jump putt has a harsher (narrower) zone. */
+    fun releaseHalfWidth(accuracy01: Float, power01: Float, isPutt: Boolean = false, circle1: Boolean = false, style: PuttStyle = PuttStyle.STAND): Float =
+        lerp(0.100f, 0.170f, accuracy01) * (1f - 0.30f * c01(power01)) * puttZone(isPutt, circle1) * styleZone(isPutt, style)
+
+    /** Seconds for the release marker to cross the whole bar. A jump putt's marker is faster. */
+    fun releaseSweepSeconds(accuracy01: Float, power01: Float, isPutt: Boolean = false, circle1: Boolean = false, style: PuttStyle = PuttStyle.STAND): Float =
+        lerp(1.10f, 1.60f, accuracy01) * (1f - 0.30f * c01(power01)) * puttSlow(isPutt, circle1) * styleSpeed(isPutt, style)
+
+    /** Half-width of the jump-timing sweet zone (jump putts only). Wider with Accuracy, narrower with power. */
+    fun jumpHalfWidth(accuracy01: Float, power01: Float): Float =
+        lerp(0.100f, 0.170f, accuracy01) * (1f - 0.25f * c01(power01))
+
+    /** Seconds for the jump marker to cross its bar. Short: the hop is quick. */
+    fun jumpSweepSeconds(accuracy01: Float, power01: Float): Float =
+        lerp(1.00f, 1.40f, accuracy01) * (1f - 0.20f * c01(power01))
+
+    /** Power multiplier from the jump tap: a good hop adds up to 5% reach, a mistimed one costs up to 12%. */
+    fun jumpPowerMul(quality: Float, error: Float): Float =
+        if (quality > 0f) 1f + JUMP_MAX_BONUS * quality else 1f - JUMP_MAX_PENALTY * abs(error)
+
+    /** Combined -1..1 error for a jump putt: the release miss plus the leak from a mistimed jump. */
+    fun puttCombinedError(releaseError: Float, jumpError: Float): Float =
+        (releaseError + JUMP_LEAK * jumpError).coerceIn(-1f, 1f)
 
     /** Half-width of the run-up sweet zone. */
     fun runupHalfWidth(accuracy01: Float, power01: Float): Float =
@@ -54,8 +89,8 @@ object ThrowTiming {
         lerp(1.50f, 2.00f, accuracy01) * (1f - 0.20f * c01(power01))
 
     /** How long (s) the sweet zone is open for a tap if the marker moves at constant speed. A fairness figure for tuning. */
-    fun releaseWindowSeconds(accuracy01: Float, power01: Float, isPutt: Boolean = false, circle1: Boolean = false): Float =
-        2f * releaseHalfWidth(accuracy01, power01, isPutt, circle1) * releaseSweepSeconds(accuracy01, power01, isPutt, circle1)
+    fun releaseWindowSeconds(accuracy01: Float, power01: Float, isPutt: Boolean = false, circle1: Boolean = false, style: PuttStyle = PuttStyle.STAND): Float =
+        2f * releaseHalfWidth(accuracy01, power01, isPutt, circle1, style) * releaseSweepSeconds(accuracy01, power01, isPutt, circle1, style)
 
     /** Signed -1..1 miss for a tap at [marker] against a zone ([center] +- [half]). 0 inside the zone; negative = early. */
     fun missError(marker: Float, center: Float, half: Float): Float {
