@@ -213,7 +213,7 @@ class GameRenderer(private val context: android.content.Context, private val ctl
                 tl = mix(h.basket, l2, t)
                 k = 14f
             }
-            Phase.AIMING, Phase.CHARGING, Phase.ACCURACY -> {
+            Phase.AIMING, Phase.POWER, Phase.RUNUP, Phase.RELEASE_ANGLE -> {
                 val d = headingToDir(ctl.aimHeading)
                 val right = Vec3(d.z, 0f, -d.x)
                 // Over-the-shoulder: the golfer fills roughly 40% of the screen height (measured on the emulator: 3.6 m back gave ~29%), the aim line runs off ahead of him.
@@ -560,7 +560,7 @@ class GameRenderer(private val context: android.content.Context, private val ctl
                 ThrowAnimation.address(pose, fh, clock)
                 golferHeading = ctl.aimHeading
             }
-            Phase.CHARGING, Phase.ACCURACY -> {
+            Phase.POWER, Phase.RUNUP, Phase.RELEASE_ANGLE -> {
                 ThrowAnimation.windup(pose, fh, m?.power ?: 0f)
                 golferHeading = ctl.aimHeading
             }
@@ -578,11 +578,11 @@ class GameRenderer(private val context: android.content.Context, private val ctl
         }
         pose.discTilt = (ctl.releaseTiltDeg * 0.7f).coerceIn(-45f, 45f)
         val holding = when (phase) {
-            Phase.INTRO, Phase.AIMING, Phase.CHARGING, Phase.ACCURACY, Phase.FLIGHT -> ctl.disc
+            Phase.INTRO, Phase.AIMING, Phase.POWER, Phase.RUNUP, Phase.RELEASE_ANGLE, Phase.FLIGHT -> ctl.disc
             else -> null
         }
         val at = when (phase) {
-            Phase.INTRO, Phase.AIMING, Phase.CHARGING, Phase.ACCURACY -> ctl.lie
+            Phase.INTRO, Phase.AIMING, Phase.POWER, Phase.RUNUP, Phase.RELEASE_ANGLE -> ctl.lie
             else -> ctl.throwOrigin
         }
         val hd = Math.toDegrees(golferHeading.toDouble()).toFloat()
@@ -595,7 +595,7 @@ class GameRenderer(private val context: android.content.Context, private val ctl
         if (!skinned.available(look)) return false
         val phase = ctl.phase
         val power = when (phase) {
-            Phase.CHARGING, Phase.ACCURACY, Phase.FLIGHT -> ctl.meter?.power ?: 0f
+            Phase.POWER, Phase.RUNUP, Phase.RELEASE_ANGLE, Phase.FLIGHT -> ctl.meter?.power ?: 0f
             else -> 0f
         }
         val swing = when (phase) {
@@ -604,15 +604,21 @@ class GameRenderer(private val context: android.content.Context, private val ctl
             else -> -1f
         }
         val at = when (phase) {
-            Phase.INTRO, Phase.AIMING, Phase.CHARGING, Phase.ACCURACY -> ctl.lie
+            Phase.INTRO, Phase.AIMING, Phase.POWER, Phase.RUNUP, Phase.RELEASE_ANGLE -> ctl.lie
             else -> ctl.throwOrigin
         }
         if (phase == Phase.INTRO || phase == Phase.AIMING) golferHeading = ctl.aimHeading
-        if (phase == Phase.CHARGING || phase == Phase.ACCURACY) golferHeading = ctl.aimHeading
+        if (phase.isThrowStep) golferHeading = ctl.aimHeading
         val hd = Math.toDegrees(golferHeading.toDouble()).toFloat()
         val tilt = (ctl.releaseTiltDeg * 0.7f).coerceIn(-45f, 45f)
+        // Run-up clip progress follows the run-up marker (1 = planted, held through the release-angle step). -1 = no run-up.
+        val runupT = when (phase) {
+            Phase.RUNUP -> ctl.meter?.runupMarker ?: 0f
+            Phase.RELEASE_ANGLE, Phase.FLIGHT -> 1f
+            else -> -1f
+        }
         val held = skinned.draw(vp, sun, camPos.x, camPos.y, camPos.z, look, ctl.profile.handedness.sign > 0f,
-            at.x, at.y, at.z, hd, ctl.forehand, power, swing, GameController.RELEASE_TIME, tilt, handDisc)
+            at.x, at.y, at.z, hd, ctl.forehand, power, swing, GameController.RELEASE_TIME, tilt, handDisc, runupT)
         useMainProgram()
         if (held) {
             val c = ctl.disc.colorRgb
@@ -630,7 +636,7 @@ class GameRenderer(private val context: android.content.Context, private val ctl
 
     private fun drawDisc(f: DiscFlight?) {
         if (f == null) return
-        if (ctl.phase == Phase.AIMING || ctl.phase == Phase.CHARGING || ctl.phase == Phase.ACCURACY || ctl.phase == Phase.INTRO || !ctl.released) return
+        if (ctl.phase == Phase.AIMING || ctl.phase.isThrowStep || ctl.phase == Phase.INTRO || !ctl.released) return
         val flying = f.state == FlightState.FLYING
         val n = if (flying) f.normal() else Vec3(0f, 1f, 0f)
         var f0 = Vec3(f.vel.x, 0f, f.vel.z).normalized()
@@ -683,11 +689,11 @@ class GameRenderer(private val context: android.content.Context, private val ctl
     private fun drawShadows(h: Hole, f: DiscFlight?) {
         // Tree shadows are baked into the ground shader's shade map (TerrainRender), so only the golfer and disc are drawn here.
         // Golfer
-        val at = if (ctl.phase == Phase.INTRO || ctl.phase == Phase.AIMING || ctl.phase == Phase.CHARGING || ctl.phase == Phase.ACCURACY) ctl.lie else ctl.throwOrigin
+        val at = if (ctl.phase == Phase.INTRO || ctl.phase == Phase.AIMING || ctl.phase.isThrowStep) ctl.lie else ctl.throwOrigin
         // Soft contact blob under the feet: stacked discs fake a smooth falloff. Then the longer cast shadow.
         for (i in 0 until 12) { val r = 1.2f - i * 0.065f; draw(meshes.disc, xfGround(h, at.x, at.z, 0.05f + i * 0.002f, r, r), 0f, 0.06f, 0.02f, 0.042f) }
         draw(meshes.disc, xfGround(h, at.x + 0.9f, at.z + 0.65f, 0.05f, 0.50f, 0.50f), 0f, 0f, 0f, 0.16f)
-        if (f != null && ctl.phase != Phase.AIMING && ctl.phase != Phase.CHARGING && ctl.phase != Phase.ACCURACY) {
+        if (f != null && ctl.phase != Phase.AIMING && !ctl.phase.isThrowStep) {
             val above = max(0f, f.pos.y - h.groundAt(f.pos.x, f.pos.z))
             val s = 0.28f + 0.02f * above
             draw(meshes.disc, xfGround(h, f.pos.x, f.pos.z, 0.06f, s, s), 0f, 0f, 0f, 0.35f / (1f + 0.15f * above))
@@ -696,7 +702,7 @@ class GameRenderer(private val context: android.content.Context, private val ctl
 
     private fun drawGuide() {
         val ph = ctl.phase
-        if (ph != Phase.AIMING && ph != Phase.CHARGING && ph != Phase.ACCURACY) return
+        if (ph != Phase.AIMING && !ph.isThrowStep) return
         val g = ctl.guide
         if (g.size < 2) return
         val inRange = ctl.pinPower <= 1.0f
@@ -726,7 +732,7 @@ class GameRenderer(private val context: android.content.Context, private val ctl
 
     private fun drawTrail() {
         // The last throw's trail belongs to the last throw: it is cleared from view while lining up the next one.
-        if (ctl.phase == Phase.INTRO || ctl.phase == Phase.AIMING || ctl.phase == Phase.CHARGING || ctl.phase == Phase.ACCURACY) return
+        if (ctl.phase == Phase.INTRO || ctl.phase == Phase.AIMING || ctl.phase.isThrowStep) return
         for (p in trail) draw(meshes.sphere, xf(p.x, p.y, p.z, 0.08f, 0.08f, 0.08f), 1f, 1f, 1f, 0.8f, 1f)
     }
 

@@ -58,12 +58,14 @@ class CoreTest {
         repeat(30) { m.update(1f / 60f) }
         assertTrue(m.power in 0.2f..0.8f)
         m.release()
-        assertEquals(SwingMeter.Phase.ACCURACY, m.phase)
+        assertEquals(SwingMeter.Phase.RUNUP, m.phase)
         val locked = m.power
         repeat(10) { m.update(1f / 60f) }
         assertEquals(locked, m.power, 1e-6f)
-        m.press()
+        // let both timing markers run off the end without a tap
+        repeat(600) { m.update(1f / 60f) }
         assertTrue(m.isFinished)
+        assertEquals(locked, m.power, 1e-6f)
     }
 
     @Test fun holdingTooLongOvercooks() {
@@ -77,16 +79,22 @@ class CoreTest {
     @Test fun tappingTheMiddleIsPerfectAndEdgesAreMisses() {
         val a = SwingMeter(0.3f, 0.3f, false, autoAccuracy = false)
         a.press(); repeat(20) { a.update(1f / 60f) }; a.release()
-        // run the marker to the middle (0.5 of the sweep)
-        var t = 0f
-        while (a.marker < 0.5f) { a.update(1f / 240f); t += 1f / 240f }
+        // run-up marker to its sweet spot, then release marker to the middle
+        while (a.runupMarker < ThrowTiming.RUNUP_CENTER) a.update(1f / 240f)
         a.press()
+        assertEquals(SwingMeter.Phase.RELEASE, a.phase)
+        assertTrue(a.runupHit)
+        while (a.releaseMarker < 0.5f) a.update(1f / 240f)
+        a.press()
+        assertTrue(a.isFinished)
         assertTrue(a.hitSweetSpot)
         assertEquals(0f, a.accuracyError, 1e-6f)
 
         val b = SwingMeter(0.3f, 0.3f, false)
         b.press(); repeat(20) { b.update(1f / 60f) }; b.release()
-        b.press()  // tapped immediately: far left
+        while (b.inStartDelay) b.update(1f / 240f); b.press()  // tapped immediately: run-up far too early
+        assertFalse(b.runupHit)
+        while (b.inStartDelay) b.update(1f / 240f); b.press()  // and the release far left
         assertFalse(b.hitSweetSpot)
         assertTrue(b.accuracyError < -0.5f)
     }
@@ -167,12 +175,13 @@ class CoreTest {
                     g.update(dt)
                     if (g.phaseTime > 0.2f) { target = minOf(g.pinPower, 1f); g.pressAction() }
                 }
-                Phase.CHARGING -> {
+                Phase.POWER -> {
                     g.update(dt)
-                    if (g.phase == Phase.CHARGING && g.meter!!.power >= target) g.releaseAction()
+                    if (g.phase == Phase.POWER && g.meter!!.power >= target) g.releaseAction()
                     tapAt = 0.5f + rnd.nextGaussian().toFloat() * 0.05f
                 }
-                Phase.ACCURACY -> { g.update(dt); if (g.phase == Phase.ACCURACY && g.meter!!.marker >= tapAt) g.pressAction() }
+                Phase.RUNUP -> { g.update(dt); if (g.phase == Phase.RUNUP && g.meter!!.runupMarker >= ThrowTiming.RUNUP_CENTER) g.pressAction() }
+                Phase.RELEASE_ANGLE -> { g.update(dt); if (g.phase == Phase.RELEASE_ANGLE && g.meter!!.releaseMarker >= tapAt) g.pressAction() }
                 Phase.FLIGHT -> g.update(dt)
                 Phase.ROUND_DONE -> {}
             }
@@ -329,8 +338,9 @@ class CoreTest {
             when (g.phase) {
                 Phase.INTRO, Phase.RESULT, Phase.HOLE_DONE -> { g.update(dt); g.pressAction() }
                 Phase.AIMING -> { g.update(dt); if (g.phaseTime > 0.2f) { target = minOf(g.pinPower, 1f); g.pressAction() } }
-                Phase.CHARGING -> { g.update(dt); if (g.phase == Phase.CHARGING && g.meter!!.power >= target) g.releaseAction() }
-                Phase.ACCURACY -> { g.update(dt); if (g.phase == Phase.ACCURACY && g.meter!!.marker >= 0.5f) g.pressAction() }
+                Phase.POWER -> { g.update(dt); if (g.phase == Phase.POWER && g.meter!!.power >= target) g.releaseAction() }
+                Phase.RUNUP -> { g.update(dt); if (g.phase == Phase.RUNUP && g.meter!!.runupMarker >= ThrowTiming.RUNUP_CENTER) g.pressAction() }
+                Phase.RELEASE_ANGLE -> { g.update(dt); if (g.phase == Phase.RELEASE_ANGLE && g.meter!!.releaseMarker >= 0.5f) g.pressAction() }
                 Phase.FLIGHT -> g.update(dt)
                 Phase.ROUND_DONE -> {}
             }

@@ -7,7 +7,13 @@ import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.sin
 
-enum class Phase { INTRO, AIMING, CHARGING, ACCURACY, FLIGHT, RESULT, HOLE_DONE, ROUND_DONE }
+/**
+ * The throw is three steps: POWER (hold, release to lock), RUNUP (tap to time the last step), RELEASE_ANGLE (tap to lock the angle).
+ */
+enum class Phase { INTRO, AIMING, POWER, RUNUP, RELEASE_ANGLE, FLIGHT, RESULT, HOLE_DONE, ROUND_DONE;
+    /** True during any of the three throw steps. */
+    val isThrowStep: Boolean get() = this == POWER || this == RUNUP || this == RELEASE_ANGLE
+}
 
 /** The banner shown after each throw. */
 class ThrowReport(
@@ -216,9 +222,9 @@ class GameController(
                 )
                 meter = m
                 m.press()
-                setPhase(Phase.CHARGING)
+                setPhase(Phase.POWER)
             }
-            Phase.ACCURACY -> meter?.press()
+            Phase.RUNUP, Phase.RELEASE_ANGLE -> { meter?.press(); syncMeterPhase() }
             Phase.RESULT -> if (phaseTime > 0.6f) afterResult()
             Phase.HOLE_DONE -> if (phaseTime > 0.8f) nextHole()
             else -> Unit
@@ -226,7 +232,7 @@ class GameController(
     }
 
     fun releaseAction() {
-        if (phase == Phase.CHARGING) {
+        if (phase == Phase.POWER) {
             meter?.release()
             syncMeterPhase()
         }
@@ -247,7 +253,7 @@ class GameController(
                 dirtyTimer += dt
                 if (dirty && dirtyTimer > 0.06f) { dirtyTimer = 0f; refreshGuide() }
             }
-            Phase.CHARGING, Phase.ACCURACY -> {
+            Phase.POWER, Phase.RUNUP, Phase.RELEASE_ANGLE -> {
                 val m = meter ?: return
                 m.update(dt)
                 syncMeterPhase()
@@ -260,8 +266,14 @@ class GameController(
 
     private fun syncMeterPhase() {
         val m = meter ?: return
-        if (phase == Phase.CHARGING && m.phase != SwingMeter.Phase.CHARGING) setPhase(Phase.ACCURACY)
-        if (m.isFinished && (phase == Phase.ACCURACY || phase == Phase.CHARGING)) launch(m)
+        if (!phase.isThrowStep) return
+        if (m.isFinished) { launch(m); return }
+        val want = when (m.phase) {
+            SwingMeter.Phase.RUNUP -> Phase.RUNUP
+            SwingMeter.Phase.RELEASE -> Phase.RELEASE_ANGLE
+            else -> phase
+        }
+        if (want != phase) setPhase(want)
     }
 
     // =====================================================================
@@ -277,7 +289,7 @@ class GameController(
         lastThrowDisc = disc
         throwOrigin = lie
         val noise = rng.nextFloat() * 2f - 1f
-        flight = Launcher.launch(profile, spec(), env, m.power, m.accuracyError, m.overcooked, m.perfectPower, noise)
+        flight = Launcher.launch(profile, spec(), env, m.effectivePower, m.accuracyError, m.overcooked, m.perfectPower, noise)
         accumulator = 0f
         swingClock = 0f
         setPhase(Phase.FLIGHT)

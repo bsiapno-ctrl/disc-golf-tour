@@ -65,13 +65,14 @@ class SkinnedGolfer(private val context: Context) {
     private fun rgb(c: Int, k: Float = 1f) = floatArrayOf(((c shr 16) and 0xFF) / 255f * k, ((c shr 8) and 0xFF) / 255f * k, (c and 0xFF) / 255f * k)
 
     /**
-     * Draws the golfer. [swingTime] is seconds since the final tap, or negative before the throw. If [discOut] is given
+     * Draws the golfer. [swingTime] is seconds since the final tap; [runupT] is 0..1 progress through the run-up step (or -1), or negative before the throw. If [discOut] is given
      * and the disc is still in the hand, it receives the disc's world matrix and the function returns true.
      */
     fun draw(
         vp: FloatArray, sun: FloatArray, camX: Float, camY: Float, camZ: Float,
         look: Appearance, rightHanded: Boolean, x: Float, y: Float, z: Float, headingDeg: Float,
         forehand: Boolean, power: Float, swingTime: Float, holdUntil: Float, tiltDeg: Float, discOut: FloatArray,
+        runupT: Float = -1f,
     ): Boolean {
         val name = nameFor(look)
         val m = model(name) ?: return false
@@ -80,7 +81,11 @@ class SkinnedGolfer(private val context: Context) {
         val throwClip = m.clips["Throw_$sfx"] ?: return false
         val a = pa.getOrPut(m) { m.newPose() }; val b = pb.getOrPut(m) { m.newPose() }; val out = pc.getOrPut(m) { m.newPose() }
 
-        m.sample(a, windup, power.coerceIn(0f, 1f) * windup.duration)
+        // Step 2 (run-up): play the run-up clip along the timing marker when the character has one,
+        // otherwise hold the power-sized windup. Looked up by name so characters without it still work.
+        val runup = if (runupT >= 0f) (m.clips["Runup_$sfx"] ?: m.clips["Runup"] ?: m.clips["RunUp_$sfx"] ?: m.clips["RunUp"]) else null
+        if (runup != null) m.sample(a, runup, runupT.coerceIn(0f, 1f) * runup.duration)
+        else m.sample(a, windup, power.coerceIn(0f, 1f) * windup.duration)
         if (swingTime >= 0f) {
             m.sample(b, throwClip, swingTime)
             val w = (swingTime / 0.12f).coerceIn(0f, 1f).let { it * it * (3f - 2f * it) }

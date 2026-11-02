@@ -59,4 +59,15 @@ class HudLayoutTest {
             assertTrue("relStick bottom ${L.relStick} h=$h", L.relStick.b <= h && L.relStick.t >= 0f)
         }
     }
+
+    @Test fun stepBarSitsAboveTheDialClearOfEverything() {
+        for (wDp in 640..2200 step 40) for (ratio in floatArrayOf(1.1f, 1.3f, 1.78f, 2.17f, 2.4f)) for (den in floatArrayOf(1f, 2f, 3f)) {
+            val w = wDp * den; val h = w / ratio
+            val L = HudLayout.compute(w, h, HudLayout.scale(w, h, den))
+            val B = HudLayout.stepBar(L.meter, HudLayout.scale(w, h, den))
+            assertTrue("stepBar $B off screen", B.l >= 0 && B.t >= 0 && B.r <= w && B.b <= h)
+            assertTrue("stepBar $B enters centre band at ${wDp}dp r=$ratio", B.l >= w * 0.60f)
+            for ((n, rc) in L.all()) assertTrue("stepBar $B overlaps $n $rc at ${wDp}dp r=$ratio den=$den", !B.intersects(rc))
+        }
+    }
 }

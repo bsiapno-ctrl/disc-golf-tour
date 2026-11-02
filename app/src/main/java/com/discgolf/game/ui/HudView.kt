@@ -16,6 +16,7 @@ import com.discgolf.game.core.Phase
 import com.discgolf.game.core.ProgressEvent
 import com.discgolf.game.core.Stat
 import com.discgolf.game.core.SwingMeter
+import com.discgolf.game.core.ThrowTiming
 import com.discgolf.game.core.clamp
 import com.discgolf.game.core.Vec3
 import kotlin.math.abs
@@ -171,7 +172,7 @@ class HudView(context: Context, private val ctl: GameController) : View(context)
                     x > width * 0.62f && y > height * 0.3f && actionPointer < 0 -> { actionPointer = id; onAction(true) }
                 }
             }
-            Phase.ACCURACY -> onAction(true)          // tap anywhere
+            Phase.RUNUP, Phase.RELEASE_ANGLE -> onAction(true)   // tap anywhere
             Phase.INTRO, Phase.RESULT, Phase.HOLE_DONE -> onAction(true)
             else -> Unit
         }
@@ -306,17 +307,18 @@ class HudView(context: Context, private val ctl: GameController) : View(context)
         drawMenuButtons(c)
         drawMinimap(c, h)
 
-        if (phase == Phase.AIMING || phase == Phase.CHARGING || phase == Phase.ACCURACY) {
+        if (phase == Phase.AIMING || phase.isThrowStep) {
             drawDiscCard(c)
             drawAimButtons(c)
             drawThrowPanel(c)
             drawMeter(c)
             val label = when (phase) {
                 Phase.AIMING -> "HOLD"
-                Phase.CHARGING -> "RELEASE"
+                Phase.POWER -> "RELEASE"
+                Phase.RUNUP -> "STEP!"
                 else -> "TAP!"
             }
-            roundButton(c, actionC[0], actionC[1], actionC[2], label, phase != Phase.AIMING, if (phase == Phase.ACCURACY) Ui.ORANGE else Ui.GOLD)
+            roundButton(c, actionC[0], actionC[1], actionC[2], label, phase != Phase.AIMING, if (phase == Phase.RUNUP || phase == Phase.RELEASE_ANGLE) Ui.ORANGE else Ui.GOLD)
         }
 
         when (phase) {
@@ -673,8 +675,11 @@ class HudView(context: Context, private val ctl: GameController) : View(context)
         val phase = ctl.phase
         val m = ctl.meter
         val M = L.meter
-        val power = if (m != null && (phase == Phase.CHARGING || phase == Phase.ACCURACY)) m.power else 0f
-        val accPhase = phase == Phase.ACCURACY
+        val power = if (m != null && phase.isThrowStep) m.power else 0f
+        val runPhase = phase == Phase.RUNUP
+        val relPhase = phase == Phase.RELEASE_ANGLE
+        val accPhase = runPhase || relPhase
+        drawStepBar(c)
         val cx = M.centerXf(); val cy = (M.t + M.b) / 2f; val R = M.w / 2f
 
         // body: chunky outline, navy face, white rim
@@ -695,11 +700,32 @@ class HudView(context: Context, private val ctl: GameController) : View(context)
         p.strokeWidth = sw; p.strokeCap = Paint.Cap.BUTT
         val zs = floatArrayOf(0f, 0.60f, 0.88f, 1f)
         val zc = intArrayOf(Color.rgb(47, 193, 106), Color.rgb(245, 197, 24), Color.rgb(232, 69, 60))
-        for (pass in 0..1) for (i in 0..2) {
+        if (runPhase && m != null) {
+            // STEP 2 ring: a dark track with the run-up sweet zone (cyan) and the marker riding round it.
+            p.color = Color.argb(200, 6, 16, 40); c.drawArc(r, 0f, 360f, false, p)
+            val zc0 = ThrowTiming.RUNUP_CENTER; val zh = m.runupHalfWidth
+            p.color = Color.argb(255, 60, 220, 255)
+            c.drawArc(r, -90f + 360f * (zc0 - zh), 360f * zh * 2f, false, p)
+            p.strokeWidth = 2 * d; p.color = Color.WHITE
+            r2.set(cx - rr - sw / 2f, cy - rr - sw / 2f, cx + rr + sw / 2f, cy + rr + sw / 2f)
+            c.drawArc(r2, -90f + 360f * (zc0 - zh), 360f * zh * 2f, false, p)
+            p.strokeWidth = sw
+        } else for (pass in 0..1) for (i in 0..2) {
             val a0 = zs[i]; val a1 = if (pass == 1) min(zs[i + 1], power) else zs[i + 1]
             if (a1 <= a0) continue
-            p.color = Color.argb(if (pass == 0) 70 else 255, Color.red(zc[i]), Color.green(zc[i]), Color.blue(zc[i]))
+            val alpha = if (pass == 0) 70 else if (relPhase) 120 else 255
+            p.color = Color.argb(alpha, Color.red(zc[i]), Color.green(zc[i]), Color.blue(zc[i]))
             c.drawArc(r, -90f + 360f * a0, 360f * (a1 - a0), false, p)
+        }
+        if (runPhase && m != null) {
+            val ma = Math.toRadians((-90f + 360f * clamp(m.runupMarker, 0f, 1f)).toDouble())
+            val mc = cos(ma).toFloat(); val ms = sin(ma).toFloat()
+            p.strokeCap = Paint.Cap.ROUND
+            p.strokeWidth = 6 * d; p.color = Color.argb(240, 6, 16, 40)
+            c.drawLine(cx + mc * (rr - sw), cy + ms * (rr - sw), cx + mc * (rr + sw), cy + ms * (rr + sw), p)
+            p.strokeWidth = 3 * d; p.color = if (m.inStartDelay) Color.argb(150, 255, 255, 255) else Color.WHITE
+            c.drawLine(cx + mc * (rr - sw), cy + ms * (rr - sw), cx + mc * (rr + sw), cy + ms * (rr + sw), p)
+            p.strokeCap = Paint.Cap.BUTT
         }
         // PERFECT segment: white-rimmed arc at the very end of the ring
         val pr = rr + sw / 2f + 1 * d; val pr2 = rr - sw / 2f - 1 * d
@@ -708,7 +734,7 @@ class HudView(context: Context, private val ctl: GameController) : View(context)
         r2.set(cx - pr2, cy - pr2, cx + pr2, cy + pr2); c.drawArc(r2, -90f + 360f * 0.97f, 360f * 0.03f, false, p)
         p.strokeCap = Paint.Cap.BUTT
         // pin marker: the power to release at
-        val pin = ctl.pinPower
+        val pin = if (phase == Phase.POWER || phase == Phase.AIMING) ctl.pinPower else 0f
         val out = pin > 1.001f
         val pa = Math.toRadians((-90f + 360f * min(pin, 1f)).toDouble())
         val pc = cos(pa).toFloat(); val ps = sin(pa).toFloat()
@@ -725,10 +751,17 @@ class HudView(context: Context, private val ctl: GameController) : View(context)
         val a0 = 210f; val span = 120f
         p.style = Paint.Style.STROKE; p.strokeWidth = 7 * d; p.color = Color.argb(if (accPhase) 200 else 90, 6, 16, 40)
         c.drawArc(r2, a0, span, false, p)
-        if (m != null) {
-            val half = m.sweetHalfWidth * span
-            p.strokeWidth = 5 * d; p.color = Color.argb(if (accPhase) 255 else 120, 255, 214, 60)
+        if (m != null && accPhase) {
+            // STEP 3 arc: the narrow release-angle zone (gold). Left end = anhyzer, right end = hyzer.
+            val half = m.releaseHalfWidth * span
+            p.strokeWidth = 5 * d; p.color = Color.argb(if (relPhase) 255 else 90, 255, 214, 60)
             c.drawArc(r2, a0 + span / 2f - half, half * 2f, false, p)
+        }
+        if (relPhase) {
+            val la = Math.toRadians(a0.toDouble()); val ra = Math.toRadians((a0 + span).toDouble())
+            val lr = ar - 11 * d
+            text(c, "ANHY", cx + cos(la).toFloat() * lr + 4 * d, cy + sin(la).toFloat() * lr + 12 * d, 7f, Ui.CYAN, Paint.Align.CENTER, display = false)
+            text(c, "HYZ", cx + cos(ra).toFloat() * lr - 4 * d, cy + sin(ra).toFloat() * lr + 12 * d, 7f, Ui.CYAN, Paint.Align.CENTER, display = false)
         }
         // cap
         val capR = R * 0.40f
@@ -736,8 +769,8 @@ class HudView(context: Context, private val ctl: GameController) : View(context)
         p.shader = RadialGradient(cx - capR * 0.3f, cy - capR * 0.4f, capR * 1.4f, Color.parseColor("#FFE98A"), if (accPhase) Ui.ORANGE else Ui.GOLD_DARK, Shader.TileMode.CLAMP)
         c.drawCircle(cx, cy + 2 * d, capR, p)
         p.shader = null
-        if (accPhase && m != null) {
-            val na = Math.toRadians((a0 + clamp(m.marker, 0f, 1f) * span).toDouble())
+        if (relPhase && m != null) {
+            val na = Math.toRadians((a0 + clamp(m.releaseMarker, 0f, 1f) * span).toDouble())
             val nc = cos(na).toFloat(); val ns = sin(na).toFloat()
             p.strokeCap = Paint.Cap.ROUND
             p.strokeWidth = 6 * d; p.color = Color.argb(240, 6, 16, 40)
@@ -761,12 +794,34 @@ class HudView(context: Context, private val ctl: GameController) : View(context)
 
         val hint = when (phase) {
             Phase.AIMING -> "HOLD, THEN RELEASE"
-            Phase.CHARGING -> if (m != null && m.power >= 1f) "TOO LATE!" else "RELEASE AT THE MARK"
-            else -> "TAP IN THE GOLD"
+            Phase.POWER -> if (m != null && m.power >= 1f) "TOO LATE!" else "1 · RELEASE AT THE MARK"
+            Phase.RUNUP -> if (m != null && m.inStartDelay) "2 · RUN UP..." else "2 · TAP IN THE CYAN"
+            else -> if (m != null && m.inStartDelay) "3 · READY..." else "3 · TAP IN THE GOLD"
         }
         val H = L.meterHint
         toon(c, H, 9 * d, Color.parseColor("#1B3E7A"), Color.parseColor("#0A1E44"))
         text(c, hint, H.centerXf(), H.t + H.h / 2f + 4 * d, 11f, Ui.WHITE, Paint.Align.CENTER, display = false, maxW = H.w - 12 * d)
+    }
+
+    /** "1 POWER · 2 RUN-UP · 3 RELEASE" with the active step lit, finished steps green and the rest dim. */
+    private fun drawStepBar(c: Canvas) {
+        val B = HudLayout.stepBar(L.meter, d)
+        val phase = ctl.phase
+        val cur = when (phase) { Phase.POWER -> 0; Phase.RUNUP -> 1; Phase.RELEASE_ANGLE -> 2; else -> -1 }
+        val labels = arrayOf("1 POWER", "2 RUN-UP", "3 RELEASE")
+        val gap = 4 * d
+        val pw = (B.w - gap * 2f) / 3f
+        for (i in 0..2) {
+            val x0 = B.l + i * (pw + gap)
+            val rc = HRect(x0, B.t, x0 + pw, B.b)
+            val active = i == cur
+            val done = cur > i
+            val top = if (active) Ui.GOLD else if (done) Color.parseColor("#2FC16A") else Color.parseColor("#1B3E7A")
+            val bot = if (active) Ui.GOLD_DARK else if (done) Color.parseColor("#1A7A42") else Color.parseColor("#0A1E44")
+            toon(c, rc, 8 * d, top, bot)
+            text(c, labels[i], rc.centerXf(), rc.t + rc.h / 2f + 3.5f * d, if (active) 9f else 8f,
+                if (active) Ui.NAVY else if (done) Ui.WHITE else Color.argb(170, 255, 255, 255), Paint.Align.CENTER, display = false, maxW = pw - 4 * d)
+        }
     }
 
     private fun drawIntro(c: Canvas, w: Float, h: Float) {

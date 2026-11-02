@@ -1,13 +1,15 @@
 package com.discgolf.game.core
 
 /**
- * The classic sports-game swing meter, adapted to a single button.
+ * The three-step throw meter, adapted to a single button (or tap).
  *
- *  1. HOLD the button: the power bar fills. RELEASE to lock the power. Let it run past 100% and it overcooks.
- *  2. A marker then sweeps across the accuracy bar. TAP the button to stop it as close to the middle as you can.
+ *  1. POWER: HOLD the button and the power bar fills. RELEASE to lock the power. Past 100% it overcooks.
+ *  2. RUN-UP: the golfer runs up and a marker rides along a timing bar. TAP to plant the step in the sweet zone.
+ *     Good timing adds a little power; bad timing loses some and nudges the release off line.
+ *  3. RELEASE ANGLE: a second, tighter bar. TAP to lock the release angle. Left of the middle is anhyzer, right is hyzer.
+ *     The zone is narrower and the marker faster the more power was used, and easier with the Accuracy rating.
  *
- * Touch gives the golfer two ways to be better than a rookie: the Touch rating slows the power bar
- * (easier to hit a partial power), and the Accuracy rating widens the centre "sweet spot" and slows the sweep.
+ * Touch slows the power bar. All the zone sizes and speeds come from [ThrowTiming].
  *
  * Pure logic with no Android types. Time is fed in through [update].
  */
@@ -18,56 +20,102 @@ class SwingMeter(
     private val autoAccuracy: Boolean = false,
     /** Power (0..1) the caddie says reaches the pin. The bar eases off around it so it is easy to hit. Negative = none. */
     private val markPower: Float = -1f,
-    /** A short putt inside circle 1: the accuracy zone is more generous and the marker slower. */
+    /** A short putt inside circle 1: the timing zones are more generous and the markers slower. */
     private val circle1: Boolean = false,
 ) {
-    enum class Phase { IDLE, CHARGING, ACCURACY, DONE }
+    enum class Phase { IDLE, CHARGING, RUNUP, RELEASE, DONE }
 
     var phase = Phase.IDLE
         private set
 
-    /** 0..1. Live while charging, frozen after release. */
+    /** 0..1. Live while charging, frozen after release. This is the power the player chose. */
     var power = 0f
         private set
 
-    /** 0..1 position of the accuracy marker. The perfect line is at 0.5. */
-    var marker = 0f
+    /** Power after the run-up bonus or penalty. Equals [power] until the run-up is tapped. */
+    var effectivePower = 0f
         private set
 
-    /** Half-width of the perfect zone, as a fraction of the bar. Wider with Accuracy. */
-    val sweetHalfWidth: Float = lerp(0.055f, 0.12f, accuracy01) * (if (circle1) 1.25f else 1f)
+    /** 0..1 position of the run-up marker, and of the release marker. */
+    var runupMarker = 0f
+        private set
+    var releaseMarker = 0f
+        private set
+
+    /** Marker of whichever timing step is live (0 outside them). */
+    val marker: Float get() = when (phase) { Phase.RUNUP -> runupMarker; Phase.RELEASE, Phase.DONE -> releaseMarker; else -> 0f }
+
+    /** Zone sizes. Valid once the power is locked (they depend on it); before then they show the power-0 sizes. */
+    var releaseHalfWidth: Float = ThrowTiming.releaseHalfWidth(accuracy01, 0f, isPutt, circle1)
+        private set
+    var releaseSweepSeconds: Float = ThrowTiming.releaseSweepSeconds(accuracy01, 0f, isPutt, circle1)
+        private set
+    var runupHalfWidth: Float = ThrowTiming.runupHalfWidth(accuracy01, 0f)
+        private set
+    var runupSweepSeconds: Float = ThrowTiming.runupSweepSeconds(accuracy01, 0f)
+        private set
+
+    /** Same name the HUD used for the single accuracy zone: now the release-angle zone. */
+    val sweetHalfWidth: Float get() = releaseHalfWidth
 
     var overcooked = false
         private set
     var perfectPower = false
         private set
 
-    /** -1..1 error. 0 inside the sweet zone. Negative = early (left), positive = late (right). */
+    /** Run-up result: -1..1 miss (0 inside the zone; negative = early), hit flag, and 0..1 quality of a hit. */
+    var runupError = 0f
+        private set
+    var runupHit = false
+        private set
+    var runupQuality = 0f
+        private set
+    /** Multiplier the run-up put on the power (above 1 = bonus). */
+    var powerMul = 1f
+        private set
+
+    /** Release result: -1..1 miss of the release-angle bar. 0 inside the zone. Negative = anhyzer side, positive = hyzer side. */
+    var releaseError = 0f
+        private set
+
+    /** -1..1 error handed to the launcher (release miss plus the leak from a mistimed run-up). */
     var accuracyError = 0f
         private set
+    /** True when the release-angle tap landed in the sweet zone. */
     var hitSweetSpot = false
         private set
 
+    /** Hyzer (+) / anhyzer (-) deviation, in degrees, the throw ends up with from the timing. */
+    val angleDeviationDeg: Float get() = ThrowTiming.angleDeviationDeg(accuracyError)
+
     private var holdAtPeak = 0f
+    /** Seconds spent in the current timing phase, to run the start delay. */
+    private var stepClock = 0f
 
     /** Seconds for the bar to go from empty to full. Slower with Touch, and slower again for putts. */
     val fillSeconds: Float = 1.25f * (1f + 0.5f * touch01) * (if (isPutt) 1.6f else 1f)
 
-    /** Seconds for the marker to cross the whole bar. */
-    val sweepSeconds: Float = lerp(1.0f, 1.5f, accuracy01) * (if (isPutt) (if (circle1) 1.35f else 1.15f) else 1f)
-
     val isFinished get() = phase == Phase.DONE
 
+    /** True while the live timing marker is waiting out its start delay (taps are ignored). */
+    val inStartDelay: Boolean get() = when (phase) {
+        Phase.RUNUP -> stepClock < ThrowTiming.RUNUP_START_DELAY
+        Phase.RELEASE -> stepClock < ThrowTiming.RELEASE_START_DELAY
+        else -> false
+    }
+
     fun reset() {
-        phase = Phase.IDLE; power = 0f; marker = 0f; overcooked = false
-        perfectPower = false; accuracyError = 0f; hitSweetSpot = false; holdAtPeak = 0f
+        phase = Phase.IDLE; power = 0f; effectivePower = 0f; runupMarker = 0f; releaseMarker = 0f
+        overcooked = false; perfectPower = false; runupError = 0f; runupHit = false; runupQuality = 0f
+        powerMul = 1f; releaseError = 0f; accuracyError = 0f; hitSweetSpot = false; holdAtPeak = 0f; stepClock = 0f
     }
 
     /** Button went down. */
     fun press() {
         when (phase) {
             Phase.IDLE -> { phase = Phase.CHARGING; power = 0f }
-            Phase.ACCURACY -> stopMarker()
+            Phase.RUNUP -> if (!inStartDelay) stopRunup(false)
+            Phase.RELEASE -> if (!inStartDelay) stopRelease()
             else -> Unit
         }
     }
@@ -91,11 +139,18 @@ class SwingMeter(
                     }
                 }
             }
-            Phase.ACCURACY -> {
-                marker += dt / sweepSeconds
-                if (marker >= 1f) {
-                    marker = 1f
-                    stopMarker()
+            Phase.RUNUP -> {
+                stepClock += dt
+                if (!inStartDelay) {
+                    runupMarker += dt / runupSweepSeconds
+                    if (runupMarker >= 1f) { runupMarker = 1f; stopRunup(true) }
+                }
+            }
+            Phase.RELEASE -> {
+                stepClock += dt
+                if (!inStartDelay) {
+                    releaseMarker += dt / releaseSweepSeconds
+                    if (releaseMarker >= 1f) { releaseMarker = 1f; stopRelease() }
                 }
             }
             else -> Unit
@@ -118,26 +173,36 @@ class SwingMeter(
         // Releasing in the last sliver of the bar counts as a perfect-power release.
         perfectPower = power >= PERFECT_POWER && !overcooked
         if (power >= 0.995f && !overcooked) power = 1f
+        effectivePower = power
+        // The timing bars are sized by the power that was just locked.
+        releaseHalfWidth = ThrowTiming.releaseHalfWidth(accuracy01, power, isPutt, circle1)
+        releaseSweepSeconds = ThrowTiming.releaseSweepSeconds(accuracy01, power, isPutt, circle1)
+        runupHalfWidth = ThrowTiming.runupHalfWidth(accuracy01, power)
+        runupSweepSeconds = ThrowTiming.runupSweepSeconds(accuracy01, power)
         if (autoAccuracy) {
-            accuracyError = 0f; hitSweetSpot = true; phase = Phase.DONE
+            runupHit = true; runupQuality = 1f; hitSweetSpot = true; accuracyError = 0f; phase = Phase.DONE
         } else {
-            phase = Phase.ACCURACY
-            marker = 0f
+            phase = Phase.RUNUP
+            runupMarker = 0f; stepClock = 0f
         }
     }
 
-    private fun stopMarker() {
-        val off = marker - 0.5f
-        val mag = kotlin.math.abs(off)
-        if (mag <= sweetHalfWidth) {
-            accuracyError = 0f
-            hitSweetSpot = true
-        } else {
-            // Small misses stay small: the error curve is gentle near the sweet spot and steep at the ends.
-            val e = Math.pow(((mag - sweetHalfWidth) / (0.5f - sweetHalfWidth)).toDouble(), 1.3).toFloat()
-            accuracyError = if (off < 0) -e else e
-            hitSweetSpot = false
-        }
+    /** [timedOut] = the marker ran off the end of the bar without a tap. */
+    private fun stopRunup(timedOut: Boolean) {
+        val c = ThrowTiming.RUNUP_CENTER
+        runupError = ThrowTiming.missError(runupMarker, c, runupHalfWidth)
+        runupQuality = ThrowTiming.hitQuality(runupMarker, c, runupHalfWidth)
+        runupHit = runupQuality > 0f
+        powerMul = ThrowTiming.runupPowerMul(runupQuality, runupError, isPutt)
+        effectivePower = ThrowTiming.effectivePower(power, powerMul)
+        phase = Phase.RELEASE
+        releaseMarker = 0f; stepClock = 0f
+    }
+
+    private fun stopRelease() {
+        releaseError = ThrowTiming.missError(releaseMarker, ThrowTiming.RELEASE_CENTER, releaseHalfWidth)
+        hitSweetSpot = releaseError == 0f
+        accuracyError = ThrowTiming.combinedError(releaseError, runupError)
         phase = Phase.DONE
     }
 
