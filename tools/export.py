@@ -1,7 +1,7 @@
-import sys; sys.path.insert(0,'.')
+import sys, os; sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from rig import *
-import os
-OUT = "/home/claude/wt/anim10/app/src/main/assets/characters"
+
+OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "app/src/main/assets/characters")
 os.makedirs(OUT, exist_ok=True)
 chars = sys.argv[sys.argv.index("--")+1:] if "--" in sys.argv else sys.argv[1:]
 FPS = 30
@@ -57,14 +57,13 @@ for ch in chars:
         export_force_sampling=True, export_skins=True, export_yup=True, export_materials='EXPORT', export_cameras=False, export_lights=False)
     print("exported", ch)
 
-    # The exporter's very first sample of every clip is a stray (un-posed) frame; for the clips added after Throw/Windup
-    # overwrite it with the true first pose so a clip never starts with a one-frame glitch.
+    # The exporter's very first sample of every clip is a stray (un-posed) frame; overwrite it with the true first pose so a clip never starts with a one-frame glitch.
     import json, numpy as np
     g = json.load(open(f"{OUT}/{ch}.gltf")); raw = bytearray(open(f"{OUT}/{ch}.bin", "rb").read())
     for an in g["animations"]:
-        if an["name"] not in ("Runup", "Runup_BH", "Runup_FH", "Cheer", "Groan"): continue
         for c in an["channels"]:
             a = g["accessors"][an["samplers"][c["sampler"]]["output"]]; bv = g["bufferViews"][a["bufferView"]]
+            if a["count"] <= 2: continue   # 2-sample clips (Windup) are real data; the rotation/translation outputs of a pose clip with a stray first sample are longer
             n = {"SCALAR": 1, "VEC3": 3, "VEC4": 4}[a["type"]]; off = bv.get("byteOffset", 0) + a.get("byteOffset", 0)
             arr = np.frombuffer(raw, dtype="<f4", count=a["count"] * n, offset=off).reshape(a["count"], n)
             arr = arr.copy(); arr[0] = arr[1]; raw[off:off + arr.nbytes] = arr.tobytes()
