@@ -11,6 +11,7 @@ import android.graphics.Path
 import android.graphics.RectF
 import android.view.MotionEvent
 import android.view.View
+import com.discgolf.game.core.DiscModel
 import com.discgolf.game.core.GameController
 import com.discgolf.game.core.Phase
 import com.discgolf.game.core.ProgressEvent
@@ -77,6 +78,7 @@ class HudView(context: Context, private val ctl: GameController) : View(context)
     private val cardRect = RectF()
     private val discPrev = RectF()
     private val discNext = RectF()
+    private val filterRect = RectF()
     private val shapePrev = RectF()
     private val shapeNext = RectF()
     private val menuRect = RectF()
@@ -105,6 +107,7 @@ class HudView(context: Context, private val ctl: GameController) : View(context)
         cardRect.set(L.discCard.l, L.discCard.t, L.discCard.r, L.discCard.b)
         discPrev.set(cardRect.left, cardRect.top, cardRect.left + 40 * d, cardRect.bottom - 30 * d)
         discNext.set(cardRect.right - 40 * d, cardRect.top, cardRect.right, cardRect.bottom - 30 * d)
+        filterRect.set(cardRect.left + 88 * d, cardRect.top + 28 * d, discNext.left, cardRect.top + 43 * d)
         shapePrev.set(cardRect.left, cardRect.bottom - 34 * d, cardRect.left + 70 * d, cardRect.bottom)
         shapeNext.set(cardRect.right - 70 * d, cardRect.bottom - 34 * d, cardRect.right, cardRect.bottom)
         // Throw panel: backhand / forehand, launch angle and release tilt, to the right of the aim stick.
@@ -169,6 +172,7 @@ class HudView(context: Context, private val ctl: GameController) : View(context)
                     !stick.active && stick.hitsFixed(x, y) -> stick.down(id, x, y, false)
                     discPrev.contains(x, y) -> onDisc(-1)
                     discNext.contains(x, y) -> onDisc(1)
+                    filterRect.contains(x, y) -> ctl.cycleDiscFilter()
                     shapePrev.contains(x, y) -> onShape(-1)
                     shapeNext.contains(x, y) -> onShape(1)
                     handBtn.contains(x, y) -> ctl.toggleForehand()
@@ -623,7 +627,9 @@ class HudView(context: Context, private val ctl: GameController) : View(context)
         val nx = cardRect.left + 90 * d
         val nw = discNext.left - nx - 2 * d
         text(c, disc.displayName.uppercase(), nx, cardRect.top + 24 * d, 17f, Ui.WHITE, maxW = nw)
-        text(c, if (ctl.isPutt) "PUTT" else disc.kind.uppercase(), nx, cardRect.top + 38 * d, 11f, Color.parseColor("#CFE3FF"), display = false, maxW = nw)
+        val kindLbl = (if (ctl.discFilter != null) "ONLY " else "") + (if (ctl.isPutt) "PUTT" else disc.kind.uppercase()) + " \u00B7 " + disc.stability
+        text(c, kindLbl, nx, cardRect.top + 38 * d, 10f, Color.parseColor("#CFE3FF"), display = false, maxW = nw)
+        drawFlightSketch(c, disc, cardRect.left + 8 * d, cardRect.top + 46 * d, cardRect.left + 36 * d, cardRect.top + 68 * d)
         // four chunky flight-number pills between the arrows
         val labels = arrayOf("SPEED", "GLIDE", "TURN", "FADE")
         val vals = arrayOf("${disc.speed}", "${disc.glide}", "${disc.turn.toInt()}", "${disc.fade.toInt()}")
@@ -639,6 +645,24 @@ class HudView(context: Context, private val ctl: GameController) : View(context)
         arrowTri(c, shapePrev.left + 20 * d, shapePrev.centerY() + 2 * d, 7 * d, false)
         arrowTri(c, shapeNext.right - 20 * d, shapeNext.centerY() + 2 * d, 7 * d, true)
         text(c, ctl.shape.label.uppercase(), cardRect.centerX(), shapePrev.centerY() + 8 * d, 15f, Ui.CYAN, Paint.Align.CENTER, maxW = cardRect.width() - 150 * d)
+    }
+
+    /** Tiny top-down flight path (right-hand backhand): bottom = thrower, up = forward. */
+    private fun drawFlightSketch(c: Canvas, disc: DiscModel, x0: Float, y0: Float, x1: Float, y1: Float) {
+        p.style = Paint.Style.FILL; p.color = Color.argb(90, 6, 16, 40)
+        c.drawRoundRect(x0, y0, x1, y1, 5 * d, 5 * d, p)
+        val pts = disc.flightSketch(12)
+        val cx = (x0 + x1) / 2f; val w = (x1 - x0) * 0.5f - 3 * d
+        val h = (y1 - y0) - 8 * d
+        path.reset()
+        pts.forEachIndexed { i, (lat, fwd) ->
+            val px = cx + (lat * 1.6f).coerceIn(-1f, 1f) * w
+            val py = y1 - 4 * d - fwd * h
+            if (i == 0) path.moveTo(px, py) else path.lineTo(px, py)
+        }
+        p.style = Paint.Style.STROKE; p.strokeWidth = 2f * d; p.strokeCap = Paint.Cap.ROUND; p.color = Ui.GOLD
+        c.drawPath(path, p)
+        p.style = Paint.Style.FILL
     }
 
     private fun drawThrowPanel(c: Canvas) {

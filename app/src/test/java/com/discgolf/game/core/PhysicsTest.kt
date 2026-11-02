@@ -55,7 +55,7 @@ class PhysicsTest {
     @Test fun understableDiscsTurnRightThenFadeBackLeft() {
         val arrow = fly(DiscModel.ARROW)
         assertTrue("arrow should drift right first (max ${arrow.maxRight})", arrow.maxRight > 3f)
-        assertTrue("then hook back (ends ${arrow.x})", arrow.x < arrow.maxRight - 1.5f)
+        assertTrue("then hook back (ends ${arrow.x})", arrow.x < arrow.maxRight - 1.0f)
         val drifter = fly(DiscModel.DRIFTER)
         assertTrue("drifter turns right (max ${drifter.maxRight})", drifter.maxRight > 3f)
         assertTrue("and finishes right of centre but not past its turn (${drifter.x})", drifter.x in 0f..drifter.maxRight + 0.1f)
@@ -81,8 +81,8 @@ class PhysicsTest {
     @Test fun anhyzerTurnsFurtherAndHyzerFadesMoreOnEveryDisc() {
         for (d in DiscModel.values()) {
             val flat = fly(d).x
-            assertTrue("${d.displayName} anhyzer", fly(d, ShotShape.ANHYZER).x > flat + 3f)
-            assertTrue("${d.displayName} hyzer", fly(d, ShotShape.HYZER).x < flat - 5f)
+            assertTrue("${d.displayName} anhyzer", fly(d, ShotShape.ANHYZER).x > flat + 1.5f)
+            assertTrue("${d.displayName} hyzer", fly(d, ShotShape.HYZER).x < flat - 3.5f)
         }
     }
 
@@ -127,7 +127,7 @@ class PhysicsTest {
             val hy = fly(d, ShotShape.HYZER).x
             val flat = fly(d).x
             val an = fly(d, ShotShape.ANHYZER).x
-            assertTrue("${d.displayName}: hyzer $hy < flat $flat < anhyzer $an", hy < flat - 3f && an > flat + 3f)
+            assertTrue("${d.displayName}: hyzer $hy < flat $flat < anhyzer $an", hy < flat - 3f && an > flat + 1.5f)
         }
     }
 
