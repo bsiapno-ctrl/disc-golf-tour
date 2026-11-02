@@ -10,6 +10,7 @@ import com.discgolf.game.core.Hole
 import com.discgolf.game.core.Phase
 import com.discgolf.game.core.Scenery
 import com.discgolf.game.core.Surface
+import com.discgolf.game.core.ThrowTiming
 import com.discgolf.game.core.Vec3
 import com.discgolf.game.core.clamp
 import com.discgolf.game.core.headingToDir
@@ -215,7 +216,7 @@ class GameRenderer(private val context: android.content.Context, private val ctl
                 tl = mix(h.basket, l2, t)
                 k = 14f
             }
-            Phase.AIMING, Phase.POWER, Phase.RUNUP, Phase.RELEASE_ANGLE -> {
+            Phase.AIMING, Phase.POWER, Phase.RUNUP, Phase.JUMP, Phase.RELEASE_ANGLE -> {
                 // Camera follows only ~35% of the aim change away from the caddie's centre line (clamped), so a big aim offset
                 // swings the golfer and the guide dots across the view instead of pointing the camera into the trees.
                 val offRad = Math.toRadians(ctl.aimOffsetDeg.toDouble()).toFloat()
@@ -565,7 +566,7 @@ class GameRenderer(private val context: android.content.Context, private val ctl
                 ThrowAnimation.address(pose, fh, clock)
                 golferHeading = ctl.aimHeading
             }
-            Phase.POWER, Phase.RUNUP, Phase.RELEASE_ANGLE -> {
+            Phase.POWER, Phase.RUNUP, Phase.JUMP, Phase.RELEASE_ANGLE -> {
                 ThrowAnimation.windup(pose, fh, m?.power ?: 0f)
                 golferHeading = ctl.aimHeading
             }
@@ -583,11 +584,11 @@ class GameRenderer(private val context: android.content.Context, private val ctl
         }
         pose.discTilt = (ctl.releaseTiltDeg * 0.7f).coerceIn(-45f, 45f)
         val holding = when (phase) {
-            Phase.INTRO, Phase.AIMING, Phase.POWER, Phase.RUNUP, Phase.RELEASE_ANGLE, Phase.FLIGHT -> ctl.disc
+            Phase.INTRO, Phase.AIMING, Phase.POWER, Phase.RUNUP, Phase.JUMP, Phase.RELEASE_ANGLE, Phase.FLIGHT -> ctl.disc
             else -> null
         }
         val at = when (phase) {
-            Phase.INTRO, Phase.AIMING, Phase.POWER, Phase.RUNUP, Phase.RELEASE_ANGLE -> ctl.lie
+            Phase.INTRO, Phase.AIMING, Phase.POWER, Phase.RUNUP, Phase.JUMP, Phase.RELEASE_ANGLE -> ctl.lie
             else -> ctl.throwOrigin
         }
         val hd = Math.toDegrees(golferHeading.toDouble()).toFloat()
@@ -600,7 +601,7 @@ class GameRenderer(private val context: android.content.Context, private val ctl
         if (!skinned.available(look)) return false
         val phase = ctl.phase
         val power = when (phase) {
-            Phase.POWER, Phase.RUNUP, Phase.RELEASE_ANGLE, Phase.FLIGHT -> ctl.meter?.power ?: 0f
+            Phase.POWER, Phase.RUNUP, Phase.JUMP, Phase.RELEASE_ANGLE, Phase.FLIGHT -> ctl.meter?.power ?: 0f
             else -> 0f
         }
         val swing = when (phase) {
@@ -609,7 +610,7 @@ class GameRenderer(private val context: android.content.Context, private val ctl
             else -> -1f
         }
         val at = when (phase) {
-            Phase.INTRO, Phase.AIMING, Phase.POWER, Phase.RUNUP, Phase.RELEASE_ANGLE -> ctl.lie
+            Phase.INTRO, Phase.AIMING, Phase.POWER, Phase.RUNUP, Phase.JUMP, Phase.RELEASE_ANGLE -> ctl.lie
             else -> ctl.throwOrigin
         }
         if (phase == Phase.INTRO || phase == Phase.AIMING) golferHeading = ctl.aimHeading
@@ -619,11 +620,20 @@ class GameRenderer(private val context: android.content.Context, private val ctl
         // Run-up clip progress follows the run-up marker (1 = planted, held through the release-angle step). -1 = no run-up.
         val runupT = when (phase) {
             Phase.RUNUP -> ctl.meter?.runupMarker ?: 0f
-            Phase.RELEASE_ANGLE, Phase.FLIGHT -> 1f
+            Phase.RELEASE_ANGLE, Phase.FLIGHT -> if (ctl.isPutt) -1f else 1f   // putts never run up
             else -> -1f
         }
+        // Putts: 0..1 progress through the jump step (-1 = standing putt / not jumping), and which putt clips to use (0 none, 1 stand, 2 jump).
+        val jumpPutt = ctl.isPutt && ctl.puttStyle == ThrowTiming.PuttStyle.JUMP
+        val puttT = when {
+            !ctl.isPutt -> -1f
+            phase == Phase.JUMP -> ctl.meter?.jumpMarker ?: 0f
+            jumpPutt && (phase == Phase.RELEASE_ANGLE || phase == Phase.FLIGHT) -> 1f
+            else -> -1f
+        }
+        val puttKind = if (!ctl.isPutt) 0 else if (jumpPutt) 2 else 1
         val held = skinned.draw(vp, sun, camPos.x, camPos.y, camPos.z, look, ctl.profile.handedness.sign > 0f,
-            at.x, at.y, at.z, hd, ctl.forehand, power, swing, GameController.RELEASE_TIME, tilt, handDisc, runupT)
+            at.x, at.y, at.z, hd, ctl.forehand, power, swing, GameController.RELEASE_TIME, tilt, handDisc, runupT, puttKind, puttT)
         useMainProgram()
         if (held) {
             val c = ctl.disc.colorRgb

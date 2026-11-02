@@ -181,6 +181,7 @@ class CoreTest {
                     tapAt = 0.5f + rnd.nextGaussian().toFloat() * 0.05f
                 }
                 Phase.RUNUP -> { g.update(dt); if (g.phase == Phase.RUNUP && g.meter!!.runupMarker >= ThrowTiming.RUNUP_CENTER) g.pressAction() }
+                Phase.JUMP -> { g.update(dt); if (g.phase == Phase.JUMP && g.meter!!.jumpMarker >= ThrowTiming.JUMP_CENTER) g.pressAction() }
                 Phase.RELEASE_ANGLE -> { g.update(dt); if (g.phase == Phase.RELEASE_ANGLE && g.meter!!.releaseMarker >= tapAt) g.pressAction() }
                 Phase.FLIGHT -> g.update(dt)
                 Phase.ROUND_DONE -> {}
@@ -340,6 +341,7 @@ class CoreTest {
                 Phase.AIMING -> { g.update(dt); if (g.phaseTime > 0.2f) { target = minOf(g.pinPower, 1f); g.pressAction() } }
                 Phase.POWER -> { g.update(dt); if (g.phase == Phase.POWER && g.meter!!.power >= target) g.releaseAction() }
                 Phase.RUNUP -> { g.update(dt); if (g.phase == Phase.RUNUP && g.meter!!.runupMarker >= ThrowTiming.RUNUP_CENTER) g.pressAction() }
+                Phase.JUMP -> { g.update(dt); if (g.phase == Phase.JUMP && g.meter!!.jumpMarker >= ThrowTiming.JUMP_CENTER) g.pressAction() }
                 Phase.RELEASE_ANGLE -> { g.update(dt); if (g.phase == Phase.RELEASE_ANGLE && g.meter!!.releaseMarker >= 0.5f) g.pressAction() }
                 Phase.FLIGHT -> g.update(dt)
                 Phase.ROUND_DONE -> {}

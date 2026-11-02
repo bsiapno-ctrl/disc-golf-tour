@@ -171,4 +171,90 @@ class ThrowTimingTest {
                 ThrowTiming.runupHalfWidth(a, p), ThrowTiming.runupSweepSeconds(a, p)))
         println(sb)
     }
+
+    // ---- Putt styles: no run-up, STAND vs JUMP
+
+    private fun putter(style: ThrowTiming.PuttStyle, hold: Int = 30): SwingMeter {
+        val m = SwingMeter(0.5f, 0f, true, puttStyle = style)
+        m.press(); repeat(hold) { m.update(1f / 60f) }; m.release()
+        return m
+    }
+
+    @Test fun standPuttSkipsRunupAndJump() {
+        val m = putter(ThrowTiming.PuttStyle.STAND)
+        assertEquals(SwingMeter.Phase.RELEASE, m.phase)
+        m.update(ThrowTiming.RELEASE_START_DELAY + 0.01f)
+        while (m.releaseMarker < 0.5f) m.update(1f / 240f)
+        m.press()
+        assertTrue(m.isFinished)
+        assertEquals(m.power, m.effectivePower, 0f)
+        assertEquals(0f, m.accuracyError, 1e-6f)
+    }
+
+    @Test fun jumpPuttGoesPowerJumpRelease() {
+        val m = putter(ThrowTiming.PuttStyle.JUMP)
+        assertEquals(SwingMeter.Phase.JUMP, m.phase)
+        m.press()                                   // inside the start delay: ignored
+        assertEquals(SwingMeter.Phase.JUMP, m.phase)
+        while (m.jumpMarker < ThrowTiming.JUMP_CENTER) m.update(1f / 240f)
+        m.press()
+        assertTrue(m.jumpHit)
+        assertTrue(m.effectivePower > m.power)      // slightly more range
+        assertEquals(SwingMeter.Phase.RELEASE, m.phase)
+        m.update(ThrowTiming.RELEASE_START_DELAY + 0.01f)
+        while (m.releaseMarker < 0.5f) m.update(1f / 240f)
+        m.press()
+        assertTrue(m.isFinished)
+        assertEquals(0f, m.accuracyError, 1e-6f)
+    }
+
+    @Test fun mistimedJumpLosesPowerAndLeaksIntoTheRelease() {
+        val m = putter(ThrowTiming.PuttStyle.JUMP)
+        while (m.phase == SwingMeter.Phase.JUMP) m.update(1f / 60f)   // never tapped: marker runs off the end
+        assertTrue(m.jumpError > 0f)
+        assertTrue(m.effectivePower < m.power)
+        m.update(ThrowTiming.RELEASE_START_DELAY + 0.01f)
+        while (m.releaseMarker < 0.5f) m.update(1f / 240f)
+        m.press()
+        assertTrue(m.accuracyError > 0f)
+    }
+
+    @Test fun nonPuttsStillRunUpRegardlessOfStyle() {
+        val m = SwingMeter(0.5f, 0f, false, puttStyle = ThrowTiming.PuttStyle.JUMP)
+        m.press(); repeat(30) { m.update(1f / 60f) }; m.release()
+        assertEquals(SwingMeter.Phase.RUNUP, m.phase)
+    }
+
+    @Test fun jumpPuttReleaseIsHarsherThanStand() {
+        for (a in accs) for (p in powers) {
+            val j = ThrowTiming.PuttStyle.JUMP; val s = ThrowTiming.PuttStyle.STAND
+            assertTrue(ThrowTiming.releaseHalfWidth(a, p, true, false, j) < ThrowTiming.releaseHalfWidth(a, p, true, false, s))
+            assertTrue(ThrowTiming.releaseSweepSeconds(a, p, true, false, j) < ThrowTiming.releaseSweepSeconds(a, p, true, false, s))
+            assertTrue(ThrowTiming.releaseWindowSeconds(a, p, true, true, j) < ThrowTiming.releaseWindowSeconds(a, p, true, true, s))
+        }
+        // style is ignored off the green
+        assertEquals(ThrowTiming.releaseHalfWidth(0.5f, 0.5f), ThrowTiming.releaseHalfWidth(0.5f, 0.5f, false, false, ThrowTiming.PuttStyle.JUMP), 0f)
+        // still humanly possible
+        assertTrue(ThrowTiming.releaseWindowSeconds(0f, 1f, true, false, ThrowTiming.PuttStyle.JUMP) >= 0.09f)
+    }
+
+    @Test fun jumpDifficultyScalesWithAccuracyAndPower() {
+        for (p in powers) {
+            assertTrue(ThrowTiming.jumpHalfWidth(1f, p) > ThrowTiming.jumpHalfWidth(0f, p))
+            assertTrue(ThrowTiming.jumpSweepSeconds(1f, p) > ThrowTiming.jumpSweepSeconds(0f, p))
+        }
+        for (a in accs) {
+            assertTrue(ThrowTiming.jumpHalfWidth(a, 1f) < ThrowTiming.jumpHalfWidth(a, 0f))
+            assertTrue(ThrowTiming.jumpSweepSeconds(a, 1f) < ThrowTiming.jumpSweepSeconds(a, 0f))
+        }
+        assertTrue(ThrowTiming.jumpHalfWidth(0f, 1f) >= 0.06f)
+    }
+
+    @Test fun jumpPowerAndErrorMaths() {
+        assertEquals(1f + ThrowTiming.JUMP_MAX_BONUS, ThrowTiming.jumpPowerMul(1f, 0f), 1e-6f)
+        assertEquals(1f - ThrowTiming.JUMP_MAX_PENALTY, ThrowTiming.jumpPowerMul(0f, -1f), 1e-6f)
+        assertTrue(ThrowTiming.jumpPowerMul(0f, 0.3f) > ThrowTiming.jumpPowerMul(0f, 0.9f))
+        assertEquals(ThrowTiming.JUMP_LEAK, ThrowTiming.puttCombinedError(0f, 1f), 1e-6f)
+        assertEquals(1f, ThrowTiming.puttCombinedError(0.95f, 1f), 0f)
+    }
 }

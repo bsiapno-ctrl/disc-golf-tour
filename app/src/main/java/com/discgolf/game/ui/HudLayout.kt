@@ -36,6 +36,16 @@ object HudLayout {
     fun stepBar(meter: HRect, d: Float): HRect =
         HRect(meter.centerXf() - 88 * d, meter.t - 72 * d, meter.centerXf() + 68 * d, meter.t - 52 * d)
 
+    /** Step-bar labels. Throws: POWER / RUN-UP / RELEASE. Putts never run up: STAND = POWER / RELEASE, JUMP = POWER / JUMP / RELEASE. */
+    fun stepLabels(isPutt: Boolean, jump: Boolean): List<String> = when {
+        !isPutt -> listOf("1 POWER", "2 RUN-UP", "3 RELEASE")
+        jump -> listOf("1 POWER", "2 JUMP", "3 RELEASE")
+        else -> listOf("1 POWER", "2 RELEASE")
+    }
+
+    /** The STAND / JUMP putt-style chip, just right of the AIM / ANGLE chip (whose rect is 70d +- 62d, h-122d..h-104d). */
+    fun puttChip(h: Float, d: Float): HRect = HRect(138 * d, h - 122 * d, 206 * d, h - 104 * d)
+
     fun compute(w: Float, h: Float, d: Float): HudRects {
         val acx = w - 82 * d; val acy = h - 100 * d; val ar = 64 * d
         val mapTop = 100 * d

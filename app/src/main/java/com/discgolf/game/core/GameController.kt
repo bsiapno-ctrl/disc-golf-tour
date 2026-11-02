@@ -10,9 +10,9 @@ import kotlin.math.sin
 /**
  * The throw is three steps: POWER (hold, release to lock), RUNUP (tap to time the last step), RELEASE_ANGLE (tap to lock the angle).
  */
-enum class Phase { INTRO, AIMING, POWER, RUNUP, RELEASE_ANGLE, FLIGHT, RESULT, HOLE_DONE, ROUND_DONE;
+enum class Phase { INTRO, AIMING, POWER, RUNUP, JUMP, RELEASE_ANGLE, FLIGHT, RESULT, HOLE_DONE, ROUND_DONE;
     /** True during any of the three throw steps. */
-    val isThrowStep: Boolean get() = this == POWER || this == RUNUP || this == RELEASE_ANGLE
+    val isThrowStep: Boolean get() = this == POWER || this == RUNUP || this == JUMP || this == RELEASE_ANGLE
 }
 
 /** The banner shown after each throw. */
@@ -73,6 +73,13 @@ class GameController(
     // ---- Derived info for the HUD / guide
     var isPutt = false
         private set
+    /** Putt style (STAND / JUMP). Only used while [isPutt]; putts never use the run-up. */
+    var puttStyle = ThrowTiming.PuttStyle.STAND
+        private set
+    fun togglePuttStyle() {
+        if (phase != Phase.AIMING || !isPutt) return
+        puttStyle = if (puttStyle == ThrowTiming.PuttStyle.STAND) ThrowTiming.PuttStyle.JUMP else ThrowTiming.PuttStyle.STAND
+    }
     var distanceToPin = 0f
         private set
     /** Power (0..1) a perfect release needs to reach the pin; above 1 means out of range. */
@@ -218,13 +225,13 @@ class GameController(
                 refreshGuide()
                 val m = SwingMeter(
                     profile.pct(Stat.ACCURACY), profile.pct(Stat.TOUCH), isPutt, autoAccuracy,
-                    markPower = pinPower, circle1 = puttCircle == 1,
+                    markPower = pinPower, circle1 = puttCircle == 1, puttStyle = puttStyle,
                 )
                 meter = m
                 m.press()
                 setPhase(Phase.POWER)
             }
-            Phase.RUNUP, Phase.RELEASE_ANGLE -> { meter?.press(); syncMeterPhase() }
+            Phase.RUNUP, Phase.JUMP, Phase.RELEASE_ANGLE -> { meter?.press(); syncMeterPhase() }
             Phase.RESULT -> if (phaseTime > 0.6f) afterResult()
             Phase.HOLE_DONE -> if (phaseTime > 0.8f) nextHole()
             else -> Unit
@@ -253,7 +260,7 @@ class GameController(
                 dirtyTimer += dt
                 if (dirty && dirtyTimer > 0.06f) { dirtyTimer = 0f; refreshGuide() }
             }
-            Phase.POWER, Phase.RUNUP, Phase.RELEASE_ANGLE -> {
+            Phase.POWER, Phase.RUNUP, Phase.JUMP, Phase.RELEASE_ANGLE -> {
                 val m = meter ?: return
                 m.update(dt)
                 syncMeterPhase()
@@ -270,6 +277,7 @@ class GameController(
         if (m.isFinished) { launch(m); return }
         val want = when (m.phase) {
             SwingMeter.Phase.RUNUP -> Phase.RUNUP
+            SwingMeter.Phase.JUMP -> Phase.JUMP
             SwingMeter.Phase.RELEASE -> Phase.RELEASE_ANGLE
             else -> phase
         }

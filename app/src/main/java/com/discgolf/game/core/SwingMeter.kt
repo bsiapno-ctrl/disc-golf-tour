@@ -6,6 +6,7 @@ package com.discgolf.game.core
  *  1. POWER: HOLD the button and the power bar fills. RELEASE to lock the power. Past 100% it overcooks.
  *  2. RUN-UP: the golfer runs up and a marker rides along a timing bar. TAP to plant the step in the sweet zone.
  *     Good timing adds a little power; bad timing loses some and nudges the release off line.
+ *     PUTTS never run up: a STAND putt goes POWER -> RELEASE; a JUMP putt goes POWER -> JUMP (tap at the top of the hop) -> RELEASE.
  *  3. RELEASE ANGLE: a second, tighter bar. TAP to lock the release angle. Left of the middle is anhyzer, right is hyzer.
  *     The zone is narrower and the marker faster the more power was used, and easier with the Accuracy rating.
  *
@@ -22,8 +23,13 @@ class SwingMeter(
     private val markPower: Float = -1f,
     /** A short putt inside circle 1: the timing zones are more generous and the markers slower. */
     private val circle1: Boolean = false,
+    /** Putt style (only used when [isPutt]). Putts never run up: STAND goes power -> release, JUMP goes power -> jump -> release. */
+    private val puttStyle: ThrowTiming.PuttStyle = ThrowTiming.PuttStyle.STAND,
 ) {
-    enum class Phase { IDLE, CHARGING, RUNUP, RELEASE, DONE }
+    enum class Phase { IDLE, CHARGING, RUNUP, JUMP, RELEASE, DONE }
+
+    private val jumpPutt = isPutt && puttStyle == ThrowTiming.PuttStyle.JUMP
+    private val style get() = if (isPutt) puttStyle else ThrowTiming.PuttStyle.STAND
 
     var phase = Phase.IDLE
         private set
@@ -41,14 +47,25 @@ class SwingMeter(
         private set
     var releaseMarker = 0f
         private set
+    /** Jump putts only: marker, zone, sweep time and result of the jump-timing step. */
+    var jumpMarker = 0f
+        private set
+    var jumpHalfWidth: Float = ThrowTiming.jumpHalfWidth(accuracy01, 0f)
+        private set
+    var jumpSweepSeconds: Float = ThrowTiming.jumpSweepSeconds(accuracy01, 0f)
+        private set
+    var jumpError = 0f
+        private set
+    var jumpHit = false
+        private set
 
     /** Marker of whichever timing step is live (0 outside them). */
-    val marker: Float get() = when (phase) { Phase.RUNUP -> runupMarker; Phase.RELEASE, Phase.DONE -> releaseMarker; else -> 0f }
+    val marker: Float get() = when (phase) { Phase.RUNUP -> runupMarker; Phase.JUMP -> jumpMarker; Phase.RELEASE, Phase.DONE -> releaseMarker; else -> 0f }
 
     /** Zone sizes. Valid once the power is locked (they depend on it); before then they show the power-0 sizes. */
-    var releaseHalfWidth: Float = ThrowTiming.releaseHalfWidth(accuracy01, 0f, isPutt, circle1)
+    var releaseHalfWidth: Float = ThrowTiming.releaseHalfWidth(accuracy01, 0f, isPutt, circle1, style)
         private set
-    var releaseSweepSeconds: Float = ThrowTiming.releaseSweepSeconds(accuracy01, 0f, isPutt, circle1)
+    var releaseSweepSeconds: Float = ThrowTiming.releaseSweepSeconds(accuracy01, 0f, isPutt, circle1, style)
         private set
     var runupHalfWidth: Float = ThrowTiming.runupHalfWidth(accuracy01, 0f)
         private set
@@ -100,12 +117,13 @@ class SwingMeter(
     /** True while the live timing marker is waiting out its start delay (taps are ignored). */
     val inStartDelay: Boolean get() = when (phase) {
         Phase.RUNUP -> stepClock < ThrowTiming.RUNUP_START_DELAY
+        Phase.JUMP -> stepClock < ThrowTiming.JUMP_START_DELAY
         Phase.RELEASE -> stepClock < ThrowTiming.RELEASE_START_DELAY
         else -> false
     }
 
     fun reset() {
-        phase = Phase.IDLE; power = 0f; effectivePower = 0f; runupMarker = 0f; releaseMarker = 0f
+        phase = Phase.IDLE; power = 0f; effectivePower = 0f; runupMarker = 0f; releaseMarker = 0f; jumpMarker = 0f; jumpError = 0f; jumpHit = false
         overcooked = false; perfectPower = false; runupError = 0f; runupHit = false; runupQuality = 0f
         powerMul = 1f; releaseError = 0f; accuracyError = 0f; hitSweetSpot = false; holdAtPeak = 0f; stepClock = 0f
     }
@@ -115,6 +133,7 @@ class SwingMeter(
         when (phase) {
             Phase.IDLE -> { phase = Phase.CHARGING; power = 0f }
             Phase.RUNUP -> if (!inStartDelay) stopRunup(false)
+            Phase.JUMP -> if (!inStartDelay) stopJump()
             Phase.RELEASE -> if (!inStartDelay) stopRelease()
             else -> Unit
         }
@@ -146,6 +165,13 @@ class SwingMeter(
                     if (runupMarker >= 1f) { runupMarker = 1f; stopRunup(true) }
                 }
             }
+            Phase.JUMP -> {
+                stepClock += dt
+                if (!inStartDelay) {
+                    jumpMarker += dt / jumpSweepSeconds
+                    if (jumpMarker >= 1f) { jumpMarker = 1f; stopJump() }
+                }
+            }
             Phase.RELEASE -> {
                 stepClock += dt
                 if (!inStartDelay) {
@@ -175,12 +201,18 @@ class SwingMeter(
         if (power >= 0.995f && !overcooked) power = 1f
         effectivePower = power
         // The timing bars are sized by the power that was just locked.
-        releaseHalfWidth = ThrowTiming.releaseHalfWidth(accuracy01, power, isPutt, circle1)
-        releaseSweepSeconds = ThrowTiming.releaseSweepSeconds(accuracy01, power, isPutt, circle1)
+        releaseHalfWidth = ThrowTiming.releaseHalfWidth(accuracy01, power, isPutt, circle1, style)
+        releaseSweepSeconds = ThrowTiming.releaseSweepSeconds(accuracy01, power, isPutt, circle1, style)
         runupHalfWidth = ThrowTiming.runupHalfWidth(accuracy01, power)
         runupSweepSeconds = ThrowTiming.runupSweepSeconds(accuracy01, power)
+        jumpHalfWidth = ThrowTiming.jumpHalfWidth(accuracy01, power)
+        jumpSweepSeconds = ThrowTiming.jumpSweepSeconds(accuracy01, power)
         if (autoAccuracy) {
             runupHit = true; runupQuality = 1f; hitSweetSpot = true; accuracyError = 0f; phase = Phase.DONE
+        } else if (isPutt) {
+            // Putts skip the run-up entirely.
+            releaseMarker = 0f; stepClock = 0f
+            if (jumpPutt) { phase = Phase.JUMP; jumpMarker = 0f } else phase = Phase.RELEASE
         } else {
             phase = Phase.RUNUP
             runupMarker = 0f; stepClock = 0f
@@ -199,10 +231,20 @@ class SwingMeter(
         releaseMarker = 0f; stepClock = 0f
     }
 
+    private fun stopJump() {
+        val q = ThrowTiming.hitQuality(jumpMarker, ThrowTiming.JUMP_CENTER, jumpHalfWidth)
+        jumpError = ThrowTiming.missError(jumpMarker, ThrowTiming.JUMP_CENTER, jumpHalfWidth)
+        jumpHit = q > 0f
+        powerMul = ThrowTiming.jumpPowerMul(q, jumpError)
+        effectivePower = ThrowTiming.effectivePower(power, powerMul)
+        phase = Phase.RELEASE
+        releaseMarker = 0f; stepClock = 0f
+    }
+
     private fun stopRelease() {
         releaseError = ThrowTiming.missError(releaseMarker, ThrowTiming.RELEASE_CENTER, releaseHalfWidth)
         hitSweetSpot = releaseError == 0f
-        accuracyError = ThrowTiming.combinedError(releaseError, runupError)
+        accuracyError = if (isPutt) ThrowTiming.puttCombinedError(releaseError, jumpError) else ThrowTiming.combinedError(releaseError, runupError)
         phase = Phase.DONE
     }
 
