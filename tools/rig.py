@@ -85,7 +85,7 @@ def pose(arm, P):
         rot_about(pb[name], 'Z', -D(rest * f))
         rot_about(pb[name], 'X', D(P['lean'] * (0.3 if name != 'Chest' else 0.4)))
     # head keeps looking at the target
-    rot_about(pb['Neck'], 'Z', D(total * 0.50))
+    rot_about(pb['Neck'], 'Z', D(total * 0.50 + P.get('hy', 0.0)))
     rot_about(pb['Head'], 'Z', D(total * 0.42))
     rot_about(pb['Head'], 'X', D(-4 - P.get('hc', 0.5) * P['lean']) if 'hc' in P else D(-8 - 0.5 * P['lean']))
     # throwing arm (right = .R) and the balancing arm
@@ -106,7 +106,7 @@ def pose(arm, P):
     # athletic stance: feet shoulder-width or wider (hip width 0.24 -> ~0.46 apart at address, ~0.7 in the charge)
     sp = 0.15 + 0.11 * wide + 0.07 * min(step, 1.0)
     cross = P.get('cross', 0.0)
-    tL = footL + Vector((sp, -0.18 * step - 0.10 * stride, 0.11 * math.sin(min(step, 1.0) * math.pi) + P.get('lZ', 0.0)))
+    tL = footL + Vector((sp, -0.18 * step - 0.10 * stride + P.get('lY', 0.0), 0.11 * math.sin(min(step, 1.0) * math.pi) + P.get('lZ', 0.0)))
     tR = footR + Vector((-sp * (1.0 - 0.45 * trail) + 0.0 * cross, 0.14 * wide + 0.10 * trail + 0.05 * cross + P.get('rY', 0.0), 0.20 * trail + P.get('rZ', 0.0)))
     ko = 1.1   # knees pushed outward over the toes
     two_bone_ik(arm, pb['UpperLeg.L'], pb['LowerLeg.L'], tL, out=ko)
@@ -150,8 +150,8 @@ def swing_keys(forehand, release):
                 (0.24, 70, 80, 30, -32, 1.0, 24, -22, 0, 1.0, 1.0, 0.0, 42, 1.45, 0.55),
                 (release, 16, 20, -8, -44, 1.0, 28, -4, 28, 0.2, 0.8, 0.0, 38, 1.4, 0.6),
                 (0.52, -40, 16, -40, -46, 1.0, 28, 6, 34, -0.3, 0.2, 0.0, 36, 1.2, 0.6),
-                (0.75, -60, 24, -42, -44, 1.0, 22, -6, 15, 0.0, 0.0, 0.0, 34, 0.9, 0.6),
-                (1.0, -50, 30, -36, -36, 1.0, 10, -10, 5, 0.1, 0.0, 0.0, 32, 0.6, 0.5)]
+                (0.75, -60, 24, -42, -44, 1.0, 22, -6, 15, -0.4, 0.0, 0.0, 34, 0.9, 0.8),
+                (1.0, -50, 30, -36, -36, 1.0, 12, -10, 5, -0.5, 0.0, 0.0, 32, 0.75, 0.9)]
     # Backhand, low flat sweep: disc taken back across the body at hip height, pulled across the front of the
     # waist (elbow bent), snapped out, then a long extended finish out to the right with a deep forward lean.
     return [k0,
@@ -159,8 +159,8 @@ def swing_keys(forehand, release):
             (0.24, -45, 80, -34, 8, 1.0, 26, -45, 10, 0.0, 1.0, 0.0, 62, 1.5, 0.75),
             (release, 14, 28, 6, 34, 1.0, 30, -38, 34, -0.3, 0.9, 0.0, 60, 1.4, 0.8),
             (0.52, 70, 24, 20, 38, 1.0, 36, -20, 26, -0.5, 0.2, 0.0, 50, 1.25, 0.85),
-            (0.75, 92, 30, 24, 32, 1.0, 40, -10, 8, -0.5, 0.0, 0.0, 36, 1.0, 0.85),
-            (1.0, 100, 34, 28, 34, 1.0, 40, -12, 0, -0.3, 0.0, 0.0, 30, 0.85, 0.8)]
+            (0.75, 92, 30, 24, 32, 1.0, 38, -10, 8, -0.5, 0.0, 0.0, 36, 1.0, 0.95),
+            (1.0, 100, 34, 28, 34, 1.0, 34, -12, 0, -0.5, 0.0, 0.0, 30, 0.85, 1.0)]
 
 R_ = 0.26 / 0.70
 # t, drive(m fwd), rYextra(neg=fwd), rZ lift, lZ lift, sway(m), bob(m)
@@ -195,6 +195,7 @@ def swing_pose(forehand, t, release):
                 armPitch=v[11], crouch=v[12], hc=v[13],
                 shift=smooth((t - 0.04) / 0.28), wide=mix(1.0, 1.3, smooth(t / 0.3)), stride=smooth(t / 0.35), trail=smooth((t - 0.55) / 0.35))
     r.update(ex)
+    r['hy'] = -0.6 * r['bodyYaw'] * smooth((t - 0.45) / 0.4)   # eyes come round to follow the disc downrange
     return r
 
 def idle_pose(bh, f, n=60):
@@ -203,4 +204,65 @@ def idle_pose(bh, f, n=60):
     s = math.sin(2 * math.pi * f / n)
     P['lean'] += 1.6 * s; P['crouch'] += 0.04 * s; P['armPitch'] += 1.0 * s
     P['sway'] = 0.012 * math.sin(2 * math.pi * f / n + 1.0); P['bob'] = 0.008 * s; P['bodyYaw'] += 1.5 * math.sin(2 * math.pi * f / n + 2.0); P['hipYaw'] += 0.8 * math.sin(2 * math.pi * f / n + 2.0)
+    return P
+
+
+# ---------------------------------------------------------------- run-up, cheer, groan
+def kf(keys, f, lo=None):
+    """Catmull-Rom through (frame, value) keys."""
+    i = 0
+    while i < len(keys) - 2 and f > keys[i + 1][0]: i += 1
+    a, b = keys[i], keys[i + 1]; p0 = keys[max(i - 1, 0)]; p3 = keys[min(i + 2, len(keys) - 1)]
+    u = max(0.0, min(1.0, (f - a[0]) / (b[0] - a[0])))
+    y0, y1, y2, y3 = p0[1], a[1], b[1], p3[1]
+    v = 0.5 * ((2 * y1) + (-y0 + y2) * u + (2 * y0 - 5 * y1 + 4 * y2 - y3) * u * u + (-y0 + 3 * y1 - 3 * y2 + y3) * u ** 3)
+    return max(lo, v) if lo is not None else v
+
+RUN_N = 30
+LY = [(0, 0), (3, -0.2), (7, -0.42), (14, 0.32), (18, -0.05), (22, -0.44), (29, 0)]
+LZ = [(0, 0), (3, 0.3), (6, 0.02), (7, 0), (12, 0), (14, 0.1), (18, 0.36), (22, 0), (29, 0)]
+RYA = [(0, 0.14), (7, 0.36), (10.5, 0.0), (14.5, -0.42), (22, 0.38), (26, 0.0), (29, 0.14)]
+RZ = [(0, 0), (5, 0), (7, 0.06), (10.5, 0.38), (14.5, 0), (20, 0), (22, 0.08), (26, 0.3), (29, 0)]
+BOB = [(0, 0), (3, 0.07), (7, -0.07), (10.5, 0.07), (14.5, -0.07), (18, 0.07), (22, -0.07), (26, 0.03), (29, 0)]
+SWAY = [(0, 0), (7, 0.04), (14.5, -0.04), (22, 0.04), (29, 0)]
+HIP = [(0, 0), (7, -5), (14.5, 5), (22, -5), (29, 0)]
+PUMP = [(0, 0.6), (7, 1.0), (10.5, 0.3), (14.5, 1.0), (18, 0.3), (22, 1.0), (29, 0.6)]
+
+def runup_pose(forehand, f):
+    """Four-step approach from the address stance into the first pose of Throw_*. Frame f in 0..29; last frame == Throw_* frame 0."""
+    end = swing_pose(forehand, 0.0, R_)
+    b = smooth((f - 13) / 16.0)
+    bs = smooth(f / 6.0)
+    run = dict(armYaw=12, elbow=75, bodyYaw=0, hipYaw=kf(HIP, f) * 1.6, step=0.0, lean=30, forePitch=-45, wristYaw=0,
+               offTuck=kf(PUMP, f), lag=0.0, cross=0.0, armPitch=mix(62, 52, bs) + 3 * math.sin(f * 2 * math.pi / 14.5),
+               crouch=mix(0.95, 0.65, bs), hc=0.5, shift=0.0, wide=mix(0.7, 0.25, bs), stride=0.0, trail=0.0,
+               drive=0.0, rY=0.0, rZ=0.0, lZ=0.0, sway=kf(SWAY, f), bob=kf(BOB, f))
+    P = {k: mix(run[k], end[k], b) if k in end else run[k] for k in run}
+    P['hy'] = 0.0
+    P['lY'] = kf(LY, f); P['lZ'] = kf(LZ, f, 0.0); P['rZ'] = kf(RZ, f, 0.0)
+    P['rY'] = kf(RYA, f) - 0.14 * P['wide']
+    return P
+
+def cheer_pose(f, n=36):
+    """Fist pump: rise out of the stance, throwing fist punched up twice, small hop, settle back to address."""
+    P = windup(False, 0.0); t = f / (n - 1)
+    up = smooth(t / 0.2) * (1 - smooth((t - 0.8) / 0.2))
+    pump = 0.5 - 0.5 * math.cos(2 * math.pi * 2 * min(1, max(0, (t - 0.2) / 0.6)))  # two pumps
+    P['crouch'] = mix(0.95, 0.15, up) + 0.25 * pump * up
+    P['lean'] = mix(22, -4, up); P['armYaw'] = mix(8, 22, up); P['armPitch'] = mix(62, -30, up)
+    P['elbow'] = mix(70, 15, up); P['forePitch'] = mix(-50, 25 - 80 * pump, up)
+    P['offTuck'] = mix(1.0, 0.9, up); P['hc'] = mix(0.3, -0.2, up); P['wide'] = mix(0.7, 0.5, up)
+    P['bodyYaw'] = 8 * up * math.sin(2 * math.pi * 2 * t); P['hipYaw'] = 0.5 * P['bodyYaw']
+    P['bob'] = 0.06 * pump * up
+    P['rZ'] = 0.10 * pump * up; P['lZ'] = 0.10 * pump * up
+    return P
+
+def groan_pose(f, n=40):
+    """Frustrated: shoulders slump, throwing arm drops, head shaken side to side."""
+    P = windup(False, 0.0); t = f / (n - 1)
+    d = smooth(t / 0.2) * (1 - smooth((t - 0.85) / 0.15))
+    P['crouch'] = mix(0.95, 0.35, d); P['lean'] = mix(22, 36, d); P['armPitch'] = mix(62, 85, d)
+    P['elbow'] = mix(70, 5, d); P['forePitch'] = mix(-50, 0, d); P['offTuck'] = mix(1.0, -0.4, d); P['hc'] = mix(0.3, -0.3, d)
+    P['hy'] = 50 * d * math.sin(2 * math.pi * 3 * min(1, max(0, (t - 0.15) / 0.7)))
+    P['bodyYaw'] = 0; P['sway'] = 0.0
     return P
