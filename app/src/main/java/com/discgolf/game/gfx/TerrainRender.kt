@@ -297,7 +297,7 @@ void main() {
     float paint = ((st1 - 0.5) * 0.22 + (st2 - 0.5) * 0.17) * nfade;
     float flick = smoothstep(0.74, 0.96, vnoise(vec2(vWorld.x * 6.0 + 2.0, vWorld.z * 55.0))) * near;
     rough *= 1.0 + paint * 1.2;
-    vec3 fairway = mix(vec3(0.30, 0.67, 0.21), vec3(0.45, 0.78, 0.26), broad);
+    vec3 fairway = mix(vec3(0.27, 0.58, 0.19), vec3(0.38, 0.67, 0.22), broad);
     // Mowing stripes, fading out in the distance where they would alias.
     float stripe = smoothstep(0.38, 0.62, fract(vWorld.z / 6.5 + (vnoise(vec2(vWorld.x * 0.07, 3.0)) - 0.5) * 0.04));
     fairway *= 1.0 - 0.26 * stripe * (1.0 - smoothstep(60.0, 160.0, dist));
@@ -311,7 +311,7 @@ void main() {
     // Putting green around the basket: short, bright, mown in rings.
     float dB = length(vWorld.xz - uBasket.xz);
     float green = 1.0 - smoothstep(6.2, 7.2, dB);
-    vec3 greenCol = vec3(0.40, 0.69, 0.30) * (1.0 - 0.03 * step(0.5, fract(dB / 1.4)));
+    vec3 greenCol = vec3(0.36, 0.62, 0.27) * (1.0 - 0.03 * step(0.5, fract(dB / 1.4)));
 
     float sand = smoothstep(0.35, 0.65, map.a);
     float lip = smoothstep(0.08, 0.35, map.a) * (1.0 - smoothstep(0.40, 0.75, map.a));
@@ -405,11 +405,11 @@ void main() {
     vec3 amb = mix(vec3(0.40, 0.46, 0.34), vec3(0.78, 0.88, 1.0), ln.y * 0.5 + 0.5) * 0.70;
     // Tree shadows: noisy, soft, cool; they take the sun away but keep the sky fill.
     float tshade = smoothstep(0.10, 0.90, shd.r + (vnoise(vWorld.xz * 1.4) - 0.5) * 0.30) * (1.0 - pad * 0.15);
-    vec3 lit = col * (amb * (1.0 - 0.10 * tshade) + vec3(1.0, 0.93, 0.78) * diff * 0.64 * (1.0 - 0.88 * tshade));
+    vec3 lit = col * (amb * (1.0 - 0.10 * tshade) + vec3(1.0, 0.93, 0.78) * diff * 0.58 * (1.0 - 0.88 * tshade));
     lit = mix(lit, lit * vec3(0.84, 0.92, 1.08), tshade * 0.6);
 
     float lum = dot(lit, vec3(0.3, 0.59, 0.11));
-    lit = mix(vec3(lum), lit, 1.06);
+    lit = mix(vec3(lum), lit, 1.0);
     float fog = smoothstep($FOG_START, $FOG_END, dist);
     fragColor = vec4(grade(mix(lit, vec3($HORIZON_R, $HORIZON_G, $HORIZON_B), fog)), 1.0);
 }

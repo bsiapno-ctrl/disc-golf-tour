@@ -74,6 +74,7 @@ class GameRenderer(private val context: android.content.Context, private val ctl
     private val trail = ArrayList<Vec3>()
     private var trailFor: DiscFlight? = null
     private var golferHeading = 0f
+    private lateinit var flightLine: FlightLine
 
     // ------------------------------------------------------------------
     // GL lifecycle
@@ -104,6 +105,7 @@ class GameRenderer(private val context: android.content.Context, private val ctl
         golfer = GolferModel(meshes)
         modelShader = ModelShader()
         puffy = PuffyTrees()
+        flightLine = FlightLine()
         skinned = SkinnedGolfer(context.applicationContext)
         library = ModelLibrary(context.applicationContext)
         decor.clear()
@@ -712,11 +714,11 @@ class GameRenderer(private val context: android.content.Context, private val ctl
         val r = if (inRange) 0.25f else 1f
         val gr = if (inRange) 0.95f else 0.6f
         val b = if (inRange) 1f else 0.15f
-        for (i in 0 until g.size - 1) {
-            val p = g[i]
-            val s = 0.14f + 0.002f * camPos.distanceTo(p)
-            draw(meshes.sphere, xf(p.x, p.y, p.z, s, s, s), r, gr, b, 0.85f, 1f)
-        }
+        // Blue ribbon along the real simulated path (dashed and fading over the last 30 per cent) and the basket marker.
+        // The sphere pass above used the default program; the line draws with its own and we switch back afterwards.
+        val rightScreen = Vec3(-view[0], -view[4], -view[8])
+        flightLine.draw(vp, camPos, rightScreen, g, ctl.hole.basket, Math.round(ctl.distanceToPin))
+        GLES30.glUseProgram(prog)
         val e = g.last()
         val gy = ctl.hole.groundAt(e.x, e.z)
         draw(meshes.ringThin, xf(e.x, gy + 0.08f, e.z, 1.3f, 1.3f, 1.3f), r, gr, b, 0.95f, 1f)

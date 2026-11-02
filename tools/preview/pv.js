@@ -144,7 +144,7 @@ const hole = JSON.parse(fs.readFileSync(`hole${holeNum}.json`));
       const pt = prog('PuffyTrees.kt:VERT','PuffyTrees.kt:FRAG');
       const tms = treeMeshes.map(m => { const vao=gl.createVertexArray(); gl.bindVertexArray(vao); const b1=gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER,b1); gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(m.v),gl.STATIC_DRAW);
         const b2=gl.createBuffer(); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,b2); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER,new Uint16Array(m.i),gl.STATIC_DRAW); for(let a=0;a<3;a++){ gl.enableVertexAttribArray(a); gl.vertexAttribPointer(a,3,gl.FLOAT,false,36,a*12);} return {vao,n:m.i.length}; });
-      const PLD=[[0.08,0.38,0.16],[0.16,0.38,0.10],[0.88,0.50,0.66],[0.84,0.38,0.14],[0.06,0.30,0.17],[0.10,0.46,0.16]], PLL=[[0.62,0.95,0.26],[0.80,0.94,0.28],[1.0,0.78,0.88],[1.0,0.80,0.34],[0.42,0.78,0.34],[0.70,0.96,0.30]], BD=[[0.30,0.20,0.13],[0.52,0.52,0.50]], BL=[[0.70,0.52,0.34],[0.97,0.96,0.92]];
+      const PLD=[[0.06,0.28,0.12],[0.13,0.30,0.09],[0.88,0.50,0.66],[0.84,0.38,0.14],[0.06,0.30,0.17],[0.10,0.46,0.16]], PLL=[[0.38,0.62,0.20],[0.44,0.62,0.22],[0.94,0.70,0.80],[0.92,0.70,0.32],[0.36,0.64,0.30],[0.46,0.66,0.24]], BD=[[0.30,0.20,0.13],[0.52,0.52,0.50]], BL=[[0.70,0.52,0.34],[0.97,0.96,0.92]];
       const species=(idx,variant,nearWater)=>{ if(nearWater&&idx%2==0) return 6|(5<<4); const oak=idx%4; const spruce=8|(4<<4);
         if(variant==2) return oak|((idx%2==0?2:3)<<4); if(variant==0) return idx%3==0 ? (idx%2==0 ? 5|(4<<4) : spruce) : oak|((idx%5==1?1:0)<<4);
         if(idx%13==5) return spruce; if(idx%2==0) return 4|((idx%3==0?1:0)<<4)|(1<<8); return ((idx>>1)%4)|((idx%7==1?1:0)<<4); };
@@ -292,7 +292,7 @@ const hole = JSON.parse(fs.readFileSync(`hole${holeNum}.json`));
       gl.useProgram(main); }
     { const t=hole.tee, hd2=0; const g=(r,a,c)=>drawM(disc, mat.trs(t[0],t[1]+0.05,t[2],r,1,r),c[0],c[1],c[2],a); for(let i=0;i<12;i++){ g(1.2-i*0.065,0.042,[0,.06,.02]); } }
     return gl.getError();
-  }, { sh: shaders, treeMeshes, hole, mode, assets, W, HT, charName, process_cam: (process.env.CAM||'3.6,0.7,1.5,14,0.9').split(',').map(Number), FOV: +(process.env.FOV||50), process_clip: (process.env.CLIP||'Windup_BH,0').split(','), process_mir: !!process.env.LEFTY });
+  }, { sh: shaders, treeMeshes, hole, mode, assets, W, HT, charName, process_cam: (process.env.CAM||(process.env.TOP?'12,0,40,32,0':'3.6,0.7,1.5,14,0.9')).split(',').map(Number), FOV: +(process.env.FOV||50), process_clip: (process.env.CLIP||'Windup_BH,0').split(','), process_mir: !!process.env.LEFTY });
   console.log('gl error', err);
   await p.screenshot({ path: outFile });
   await b.close();

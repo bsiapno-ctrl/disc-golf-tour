@@ -28,10 +28,10 @@ class PuffyTrees {
     private val meshes = arrayOfNulls<TreeMesh>(PuffyTreeGen.SEEDS * 3)
 
     /** Foliage families: 0 fresh green, 1 yellow-green, 2 pink blossom, 3 orange blossom, 4 pine, 5 palm. */
-    private val leafDark = arrayOf(floatArrayOf(0.08f, 0.38f, 0.16f), floatArrayOf(0.16f, 0.38f, 0.10f), floatArrayOf(0.88f, 0.50f, 0.66f),
+    private val leafDark = arrayOf(floatArrayOf(0.06f, 0.28f, 0.12f), floatArrayOf(0.13f, 0.30f, 0.09f), floatArrayOf(0.88f, 0.50f, 0.66f),
         floatArrayOf(0.84f, 0.38f, 0.14f), floatArrayOf(0.06f, 0.30f, 0.17f), floatArrayOf(0.10f, 0.46f, 0.16f))
-    private val leafLight = arrayOf(floatArrayOf(0.48f, 0.78f, 0.24f), floatArrayOf(0.64f, 0.78f, 0.26f), floatArrayOf(0.94f, 0.70f, 0.80f),
-        floatArrayOf(0.92f, 0.70f, 0.32f), floatArrayOf(0.36f, 0.64f, 0.30f), floatArrayOf(0.56f, 0.80f, 0.28f))
+    private val leafLight = arrayOf(floatArrayOf(0.38f, 0.62f, 0.20f), floatArrayOf(0.44f, 0.62f, 0.22f), floatArrayOf(0.94f, 0.70f, 0.80f),
+        floatArrayOf(0.92f, 0.70f, 0.32f), floatArrayOf(0.36f, 0.64f, 0.30f), floatArrayOf(0.46f, 0.66f, 0.24f))
     private val barkDark = arrayOf(floatArrayOf(0.30f, 0.20f, 0.13f), floatArrayOf(0.52f, 0.52f, 0.50f))
     private val barkLight = arrayOf(floatArrayOf(0.70f, 0.52f, 0.34f), floatArrayOf(0.97f, 0.96f, 0.92f))
 
@@ -199,8 +199,13 @@ void main() {
     vec3 gnd = vec3(0.36, 0.40, 0.24);
     vec3 amb = mix(gnd, sky, n.y * 0.5 + 0.5) * 0.74;
     // Upward-facing leaf tops (what the top-down flight camera sees) get less sun so canopies do not blow out to neon.
-    float topK = mix(1.0, 0.62, smoothstep(0.55, 1.0, n.y) * (1.0 - isBark));
-    vec3 lit = base * (amb * mix(1.0, 0.85, 1.0 - topK + 0.0) + vec3(1.0, 0.96, 0.86) * diff * 0.80 * topK);
+    float up = smoothstep(0.50, 1.0, n.y) * (1.0 - isBark);
+    float over = clamp(v.y * 1.4, 0.0, 1.0);   // how much the camera looks down on it
+    float topK = mix(1.0, 0.46, up * (0.55 + 0.45 * over));
+    // Depth: undersides and lower clusters get darker, canopy tops from above sit in a cooler, deeper green.
+    float under = smoothstep(0.1, -0.7, n.y) * (1.0 - isBark);
+    vec3 lit = base * (amb * mix(1.0, 0.80, 1.0 - topK) * (1.0 - 0.38 * under) + vec3(1.0, 0.96, 0.88) * diff * 0.70 * topK);
+    lit *= 1.0 - 0.18 * up * over * (1.0 - smoothstep(0.0, 1.0, g));
     // Warm rim of sun on the lit upper edge of each cluster.
     float rim = pow(1.0 - nv, 3.0) * max(dot(n, l), 0.0);
     lit += uLeafLight * rim * 0.20 * (1.0 - isBark);
@@ -208,8 +213,8 @@ void main() {
     float edge = smoothstep(0.30, 0.04, nv) * (1.0 - isBark);
     lit = mix(lit, uLeafDark * vec3(0.30, 0.38, 0.30) * uTint, edge * 0.60);
     float lm = dot(lit, vec3(0.3, 0.59, 0.11));
-    lit = mix(vec3(lm), lit, 1.02);
-    lit = min(lit, vec3(0.88));
+    lit = mix(vec3(lm), lit, 0.94);
+    lit = min(lit, vec3(0.72));
     float fogAmt = smoothstep($FOG_START, $FOG_END, dist);
     fragColor = vec4(grade(mix(lit, uFogColor, fogAmt)), 1.0);
 }
