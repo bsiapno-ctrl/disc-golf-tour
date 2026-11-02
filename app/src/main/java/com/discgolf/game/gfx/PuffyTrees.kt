@@ -30,8 +30,8 @@ class PuffyTrees {
     /** Foliage families: 0 fresh green, 1 yellow-green, 2 pink blossom, 3 orange blossom, 4 pine, 5 palm. */
     private val leafDark = arrayOf(floatArrayOf(0.08f, 0.38f, 0.16f), floatArrayOf(0.16f, 0.38f, 0.10f), floatArrayOf(0.88f, 0.50f, 0.66f),
         floatArrayOf(0.84f, 0.38f, 0.14f), floatArrayOf(0.06f, 0.30f, 0.17f), floatArrayOf(0.10f, 0.46f, 0.16f))
-    private val leafLight = arrayOf(floatArrayOf(0.62f, 0.95f, 0.26f), floatArrayOf(0.80f, 0.94f, 0.28f), floatArrayOf(1.00f, 0.78f, 0.88f),
-        floatArrayOf(1.00f, 0.80f, 0.34f), floatArrayOf(0.42f, 0.78f, 0.34f), floatArrayOf(0.70f, 0.96f, 0.30f))
+    private val leafLight = arrayOf(floatArrayOf(0.48f, 0.78f, 0.24f), floatArrayOf(0.64f, 0.78f, 0.26f), floatArrayOf(0.94f, 0.70f, 0.80f),
+        floatArrayOf(0.92f, 0.70f, 0.32f), floatArrayOf(0.36f, 0.64f, 0.30f), floatArrayOf(0.56f, 0.80f, 0.28f))
     private val barkDark = arrayOf(floatArrayOf(0.30f, 0.20f, 0.13f), floatArrayOf(0.52f, 0.52f, 0.50f))
     private val barkLight = arrayOf(floatArrayOf(0.70f, 0.52f, 0.34f), floatArrayOf(0.97f, 0.96f, 0.92f))
 

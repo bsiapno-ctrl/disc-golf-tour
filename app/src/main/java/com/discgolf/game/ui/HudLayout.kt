@@ -18,6 +18,7 @@ class HudRects(
     val menu: HRect, val cardBtn: HRect, val minimap: HRect?, val discCard: HRect, val throwPanel: HRect,
     val meter: HRect, val meterHint: HRect, val pinChip: HRect, val stick: HRect, val relStick: HRect, val action: HRect,
     val actionCx: Float, val actionCy: Float, val actionR: Float,
+    val relCx: Float, val relCy: Float, val relR: Float,
 ) {
     fun all(): List<Pair<String, HRect>> = listOfNotNull(
         "holeBanner" to holeBanner, "distChip" to distChip, "scorePanel" to scorePanel, "windPanel" to windPanel,
@@ -28,9 +29,8 @@ class HudRects(
 
 /** Pure layout for the in-game HUD. All sizes are design units times [d]. */
 object HudLayout {
-    /** Release-angle stick: centre x (design units from the left) and radius. Sits between the throw panel and the swing dial. */
-    const val REL_CX = 345f
-    const val REL_R = 36f
+    /** Release-angle stick radius (design units). It sits in the right column directly above the HOLD button, clear of the golfer. */
+    const val REL_R = 34f
 
     /** Same scale rule HudView has always used: design for 760 x 360 dp, clamp the zoom. */
     fun scale(w: Float, h: Float, baseDp: Float): Float =
@@ -43,12 +43,14 @@ object HudLayout {
     fun compute(w: Float, h: Float, d: Float): HudRects {
         val acx = w - 82 * d; val acy = h - 100 * d; val ar = 64 * d
         val mapTop = 100 * d
-        val mapBottom = min(mapTop + 190 * d, acy - ar - 10 * d)
+        val rr = REL_R * d * 1.35f
+        val relCx = acx
+        val relCy = acy - ar - 6 * d - rr
+        val mapBottom = min(mapTop + 190 * d, relCy - rr - 6 * d)
         val map = if (mapBottom - mapTop < 90 * d) null else HRect(w - 124 * d, mapTop, w - 12 * d, mapBottom)
         // Stick hit zone is radius * 1.35 around (70, h-56) with radius 46.
         // Round swing dial sits left of the action button, right of the 60% x line so the golfer's body stays visible.
         val dcx = w - 214 * d; val dR = 48 * d
-        val rr = REL_R * d * 1.35f
         val sr = 46 * d * 1.35f
         return HudRects(
             holeBanner = HRect(12 * d, 10 * d, 222 * d, 70 * d),
@@ -64,9 +66,10 @@ object HudLayout {
             meterHint = HRect(w - 276 * d, h - 24 * d, w - 152 * d, h - 6 * d),
             pinChip = HRect(w - 264 * d, h - 150 * d, w - 164 * d, h - 132 * d),
             stick = HRect(70 * d - sr, h - 56 * d - sr, 70 * d + sr, h - 56 * d + sr),
-            relStick = HRect(REL_CX * d - rr, h - 56 * d - rr, REL_CX * d + rr, h - 56 * d + rr),
+            relStick = HRect(relCx - rr, relCy - rr, relCx + rr, relCy + rr),
             action = HRect(acx - ar, acy - ar, acx + ar, acy + ar),
             actionCx = acx, actionCy = acy, actionR = ar,
+            relCx = relCx, relCy = relCy, relR = REL_R * d,
         )
     }
 }

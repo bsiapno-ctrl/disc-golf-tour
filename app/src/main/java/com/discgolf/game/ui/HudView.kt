@@ -97,7 +97,7 @@ class HudView(context: Context, private val ctl: GameController) : View(context)
         L = HudLayout.compute(wf, hf, d)   // all panel rects come from this pure, unit-tested function
         actionC[0] = L.actionCx; actionC[1] = L.actionCy; actionC[2] = L.actionR
         stick.layout(70 * d, hf - 56 * d, 46 * d)
-        relStick.layout(HudLayout.REL_CX * d, hf - 56 * d, HudLayout.REL_R * d)
+        relStick.layout(L.relCx, L.relCy, L.relR)
         cardRect.set(L.discCard.l, L.discCard.t, L.discCard.r, L.discCard.b)
         discPrev.set(cardRect.left, cardRect.top, cardRect.left + 40 * d, cardRect.bottom - 30 * d)
         discNext.set(cardRect.right - 40 * d, cardRect.top, cardRect.right, cardRect.bottom - 30 * d)
@@ -663,11 +663,10 @@ class HudView(context: Context, private val ctl: GameController) : View(context)
         relStick.draw(c, p, d, on)
         // live readouts above each stick
         val sy = stick.cy - stick.radius - 8 * d
-        text(c, String.format("H %+.0f°  V %.0fm", ctl.aimOffsetDeg, ctl.aimDistance), stick.cx, sy, 11f, Ui.GOLD, Paint.Align.CENTER, display = false)
+        text(c, String.format("H %+.0f°  V %.0fm", ctl.aimOffsetDeg, ctl.aimDistance), stick.cx, sy, 12f, Ui.GOLD, Paint.Align.CENTER, display = false)
         val tilt = ctl.releaseTiltDeg
         val tl = if (tilt > 0.5f) String.format("HYZ %.0f°", tilt) else if (tilt < -0.5f) String.format("ANHY %.0f°", -tilt) else "FLAT"
-        text(c, tl, relStick.cx, relStick.cy - relStick.radius - 20 * d, 11f, Ui.CYAN, Paint.Align.CENTER, display = false)
-        text(c, String.format("NOSE %.0f°", ctl.launchAngleDeg), relStick.cx, relStick.cy - relStick.radius - 8 * d, 11f, Ui.WHITE, Paint.Align.CENTER, display = false)
+        text(c, tl + String.format("  NOSE %.0f°", ctl.launchAngleDeg), relStick.cx, relStick.cy - relStick.radius - 8 * d, 12f, Ui.CYAN, Paint.Align.CENTER, display = false, maxW = 112 * d)
     }
 
     // (4) Hot Shots style swing dial: power ring fills clockwise, inner arc holds the accuracy needle, glossy cap shows % power

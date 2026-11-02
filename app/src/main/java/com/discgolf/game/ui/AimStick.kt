@@ -90,16 +90,30 @@ class AimStick {
             path.close()
             c.drawPath(path, p)
         }
-        // end labels just outside the arrowheads
-        p.textSize = 10f * d; p.textAlign = Paint.Align.CENTER; p.typeface = Ui.BODY
-        p.color = if (accent != 0) accent else 0xFFFFFFFF.toInt()
-        val off = radius + 12f * d
-        if (labels[0].isNotEmpty()) c.drawText(labels[0], bx - off - 2 * d, by + 4 * d, p)
-        if (labels[1].isNotEmpty()) c.drawText(labels[1], bx + off + 2 * d, by + 4 * d, p)
-        p.textAlign = Paint.Align.LEFT
-        if (labels[2].isNotEmpty()) c.drawText(labels[2], bx + 5 * d, by - radius * 0.62f, p)
-        if (labels[3].isNotEmpty()) c.drawText(labels[3], bx + 5 * d, by + radius * 0.62f + 8 * d, p)
+        // end labels: 12dp bold text on a dark pill so they read on grass; drawn inside the ring for up/down, outside for left/right
+        p.textSize = 12f * d; p.typeface = Ui.BODY; p.isFakeBoldText = true; p.textAlign = Paint.Align.CENTER
+        val off = radius + 6f * d
+        pillLabel(c, p, d, labels[0], bx - off, by, 1)
+        pillLabel(c, p, d, labels[1], bx + off, by, -1)
+        pillLabel(c, p, d, labels[2], bx, by - radius * 0.56f, 0)
+        pillLabel(c, p, d, labels[3], bx, by + radius * 0.56f, 0)
+        p.isFakeBoldText = false
         p.style = Paint.Style.FILL
+    }
+
+    /** side: 1 = label extends left of x, -1 = extends right of x, 0 = centred. */
+    private fun pillLabel(c: Canvas, p: Paint, d: Float, s: String, x: Float, y: Float, side: Int) {
+        if (s.isEmpty()) return
+        val w = p.measureText(s) + 10f * d; val h = 17f * d
+        val cx = x - side * w / 2f
+        val rf = android.graphics.RectF(cx - w / 2f, y - h / 2f, cx + w / 2f, y + h / 2f)
+        p.style = Paint.Style.FILL; p.color = 0xCC061028.toInt()
+        c.drawRoundRect(rf, h / 2f, h / 2f, p)
+        p.style = Paint.Style.STROKE; p.strokeWidth = 1.5f * d; p.color = if (accent != 0) accent else 0xFFFFFFFF.toInt()
+        c.drawRoundRect(rf, h / 2f, h / 2f, p)
+        p.style = Paint.Style.FILL
+        p.color = 0xFFFFFFFF.toInt()
+        c.drawText(s, cx, y + 4.2f * d, p)
     }
 
     fun draw(c: Canvas, p: Paint, d: Float, enabled: Boolean) {

@@ -214,7 +214,10 @@ class GameRenderer(private val context: android.content.Context, private val ctl
                 k = 14f
             }
             Phase.AIMING, Phase.POWER, Phase.RUNUP, Phase.RELEASE_ANGLE -> {
-                val d = headingToDir(ctl.aimHeading)
+                // Camera follows only ~35% of the aim change away from the caddie's centre line (clamped), so a big aim offset
+                // swings the golfer and the guide dots across the view instead of pointing the camera into the trees.
+                val offRad = Math.toRadians(ctl.aimOffsetDeg.toDouble()).toFloat()
+                val d = headingToDir(ctl.aimHeading - 0.65f * offRad.coerceIn(-1.4f, 1.4f))
                 val right = Vec3(d.z, 0f, -d.x)
                 // Over-the-shoulder: the golfer fills roughly 40% of the screen height (measured on the emulator: 3.6 m back gave ~29%), the aim line runs off ahead of him.
                 tp = ctl.lie - d * 3.3f + right * 0.8f + up * 1.45f
