@@ -279,7 +279,7 @@ void main() {
     // Fine grain fades with distance so far ground does not shimmer.
     float fine = mix(vnoise(vWorld.xz * 3.5), 0.5, smoothstep(25.0, 90.0, dist));
 
-    vec3 rough = mix(vec3(0.09, 0.31, 0.08), vec3(0.21, 0.47, 0.11), broad);
+    vec3 rough = mix(vec3(0.07, 0.29, 0.09), vec3(0.18, 0.45, 0.12), broad);
     rough = mix(rough, vec3(0.33, 0.37, 0.14), smoothstep(0.58, 0.82, mid) * 0.5);   // dry, yellowed patches
     // Close up: individual blades (stretched noise at two scales) and speckle, fading before they would shimmer.
     float near = 1.0 - smoothstep(6.0, 55.0, dist);
@@ -297,7 +297,7 @@ void main() {
     float paint = ((st1 - 0.5) * 0.22 + (st2 - 0.5) * 0.17) * nfade;
     float flick = smoothstep(0.74, 0.96, vnoise(vec2(vWorld.x * 6.0 + 2.0, vWorld.z * 55.0))) * near;
     rough *= 1.0 + paint * 1.2;
-    vec3 fairway = mix(vec3(0.46, 0.76, 0.19), vec3(0.60, 0.85, 0.26), broad);
+    vec3 fairway = mix(vec3(0.30, 0.67, 0.21), vec3(0.45, 0.78, 0.26), broad);
     // Mowing stripes, fading out in the distance where they would alias.
     float stripe = smoothstep(0.38, 0.62, fract(vWorld.z / 6.5 + (vnoise(vec2(vWorld.x * 0.07, 3.0)) - 0.5) * 0.04));
     fairway *= 1.0 - 0.26 * stripe * (1.0 - smoothstep(60.0, 160.0, dist));
@@ -380,8 +380,16 @@ void main() {
     col = mix(col, col * vec3(0.52, 0.58, 0.42), shd.g * 0.75);
 
     // Light: sun plus sky-and-ground ambient.
-    float diff = max(dot(n, normalize(uLightDir)), 0.0);
-    vec3 amb = mix(vec3(0.46, 0.50, 0.34), vec3(0.80, 0.88, 1.0), n.y * 0.5 + 0.5) * 0.72;
+    // Contour: exaggerate the slope for lighting so rolls and dips read, and darken creases (curvature from normal derivatives).
+    vec3 ln = normalize(vec3(n.x * 2.6, n.y, n.z * 2.6));
+    float diff = max(dot(ln, normalize(uLightDir)), 0.0);
+    float crease = clamp((length(dFdx(n)) + length(dFdy(n))) * 14.0 / (1.0 + dist * 0.02), 0.0, 1.0);
+    float hgt = clamp((vWorld.y - uTee.y) * 0.08 + 0.5, 0.0, 1.0);
+    col *= mix(vec3(0.86, 0.94, 0.98), vec3(1.07, 1.04, 0.92), hgt);          // low ground cooler, high ground sun-warmed
+    col *= 1.0 - 0.22 * crease * (1.0 - sand);
+    // Big soft cloud-shadow-like patches of light and dark for depth.
+    col *= 0.90 + 0.20 * fbm(vWorld.xz * 0.018 + 40.0);
+    vec3 amb = mix(vec3(0.40, 0.46, 0.34), vec3(0.78, 0.88, 1.0), ln.y * 0.5 + 0.5) * 0.70;
     // Tree shadows: noisy, soft, cool; they take the sun away but keep the sky fill.
     float tshade = smoothstep(0.10, 0.90, shd.r + (vnoise(vWorld.xz * 1.4) - 0.5) * 0.30) * (1.0 - pad * 0.15);
     vec3 lit = col * (amb * (1.0 - 0.10 * tshade) + vec3(1.0, 0.93, 0.78) * diff * 0.64 * (1.0 - 0.88 * tshade));
