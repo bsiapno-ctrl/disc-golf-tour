@@ -2,8 +2,8 @@
 
 Hole numbers below are lengths in feet and pars read from public course pages (own wording; no maps or images copied).
 Geometry in the JSON (tee/basket positions, bends, trees, ponds, terrain) is still an approximation for every course
-except Picnic Island, whose geometry is now traced from UDisc's own pin data and satellite view (see the Picnic Island
-section below): each other hole keeps its old direction and was rescaled so tee-to-basket distance matches the real length.
+except Picnic Island and Olympus, whose geometry now comes from UDisc's own pin data (see the Picnic Island and Olympus
+sections below): each other hole keeps its old direction and was rescaled so tee-to-basket distance matches the real length.
 
 ## Real lengths and pars
 
@@ -80,6 +80,62 @@ Per-hole notes (L/R = turn direction of the dogleg as played, with the turn angl
 What is not known: hole-by-hole real fairway width (set from the visible mown corridor, 6-18 m), real tree species/heights (set from
 canopy size), whether the oaks overhang the lines at their true heights, and any ground height (flat, no survey).
 
+## Olympus (Brooksville, FL): rebuilt from UDisc pins and the Jomez DiscGolf broadcast videos
+
+Regenerate with `python3 tools/olympus_build.py` (inputs `tools/olympus_spec.py`; previews `python3 tools/olympus_preview.py` ->
+`tools/olympus_preview/`). The old file (traced relative positions, invented bends, bushes, ponds and OB) is replaced.
+
+**Pins and bends: exact (UDisc).** The course-map page (udisc.com/courses/olympus-dgc-u7x5/v2/course-map) carries lat/lon for every
+tee (Gold, Silver, Red, ...), basket (Blue, Red, Old/New variants) and dogleg point, plus par and length per tee-basket pair; these
+are copied into `RAW` in the spec and projected to metres (origin lat 28.5565, lon -82.3090).
+Two layouts share the land:
+* **MPO Supreme Flight Open** (holes 1-18): Gold tee to Blue basket (hole 2 uses New Blue), par 66. Par and tournament length come from
+  the broadcast title cards (front nine 3,4,4,4,4,3,3,3,3; back nine seen: 10 par 3, 11 par 4, 12 par 3, 13 par 3, 15 par 5, 17 par 4;
+  holes 14 par 5, 16 par 4 and 18 par 4 are UDisc's). Broadcast lengths (m): 106, 239, 165, 220, 192, 98, 110, 136, 146, 113, 166, 162,
+  138, -, 293, -, 168, -. Where the broadcast distance differs from UDisc's Gold-Blue path by more than 3 % (holes 1, 2, 4, 7, 9, 10,
+  12, 13, 15) the tee ("MPO") is slid along the first leg of the line to match the broadcast number (up to 18 m); this is an
+  assumption (a tournament tee back/forward of Gold), not a surveyed pin.
+* **Red to Red** (holes 101-118, hole 6 is shared): Red tee to Red basket with UDisc's own bends, par 61 (pars from the old file; the
+  UDisc path pars for Red-Red sum to 59, UDisc's layout page says 61, so holes 11 and 12 stay par 4). Path lengths sum to 6,171 ft; UDisc
+  lists 5,920 ft for the layout (some Red-Red paths may differ from the layout's), so treat the Red layout lengths as UDisc path distances.
+
+**The videos: what they are.** Both Jomez videos (MPO R1F9 `YkaPk2PR9cM`, 2259 s, holes 1-9; MPO R1B9 `coQSmIg0gxY`, 2534 s, holes
+10-18) are player-eye footage with a small course-map graphic: there are NO drone flyovers of the holes. I sampled each hole's tee,
+fairway and basket shots frame by frame (canvas contact sheets of paused frames). So trees are what the cameras see beside the
+line, not a full inventory, and the second video is shot in fog and rain (holes 14-16 are mostly invisible in it).
+
+**Trees, bushes, ground: procedural, steered by the footage (not surveyed).** Per hole the spec gives belt densities left/right of the line,
+open or pinched stretches, the fraction of big spreading live oaks (canopy 3.6-5.2 m, 14-19 m tall) against slash/longleaf pines (canopy 2-2.7 m,
+20-26 m), the few trees I could place by eye (large oaks near basket or line), wiregrass clumps (bushes) and the ground features.
+Two oaks close the inside corner of every bent line so the direct line is blocked (needed by the lane check). No ponds, bunkers or OB
+are used: the sandy pit floor on hole 6 and the marsh grass seen on the hole 8 intro are NOT modelled as water.
+
+**Elevation: estimates.** There is no survey, lidar or flyover. Heights are my reading of the footage (tee boxes above or below the
+fairway, descents, steps, banks), expressed as stations along each line and blended into the height grid (5 m cells, soft fall-off
+about 35-50 m either side, 0.2 m of gentle undulation), then chained so each hole starts near the previous basket. Total relief about 5.8-22 m.
+Treat stated drops as plus or minus 50 %:
+
+| Hole | Tee to basket (est.) | Features read from video |
+|---|---|---|
+| 1 | -2 m | built-up turf pad, sandy lane, big oaks at the basket (medium) |
+| 2 | -7.5 m | tee at a fence, broad mown lawn dropping into a pine chute, basket low (medium) |
+| 3 | -1 m | trail dipping into a shallow hollow, dense woods (medium) |
+| 4 | -1.5 m | tee on an embankment (+1.5), fence and open ground left (medium) |
+| 5 | +2 m | clearing then a sandy knoll under the basket (+2.5) (medium) |
+| 6 | -5 m (tee box +5 over the pit floor, basket +0.8) | wooden elevated tee, sand pit floor (medium) |
+| 7 | -2.5 m | open sandy tee, big oak at right (medium) |
+| 8 | -1 m | basket under a bank with wooden stairs left (+4.5) (medium) |
+| 9 | -5 m | turf tee over a wooded gully, banks +2.5 either side (medium) |
+| 10-12 | about 0 | trail / clearing (low-medium) |
+| 13 | -3 m | quarry bowl, limestone wall about +7.5 m behind the basket (low-medium) |
+| 14-18 | about 0 to -1 | 17 has a low ledge and stone steps at the basket; 18 has a raised wooden tee (+2) (low to low-medium) |
+
+**Per-hole confidence.** Geometry (tee, basket, bends, length, par) is high on every hole. Trees/ground: 1-9 medium (seen on video,
+positions of individual trees are not), 10-13, 15, 17, 18 low-medium, 14 and 16 low (UDisc line only; fog / not studied).
+Not done: tracing canopies from UDisc satellite screenshots as for Picnic Island (the video-steered procedural trees replace it), a flyover
+check (none exists in these videos), and any pixel-level comparison of the top-down previews with the video stills (only a rough look at the previews against the
+frames). Checks run: lane check (LaneCheck.kt) passes for all 36 holes, loader/length/par checks of BundledCoursesTest pass (file 137 KB).
+
 ## Which Cypress is on the Pro Tour?
 
 None found. Cypress Point Park hosted the Gulf Coast Tour Challenge (PDGA Pro/Am C-Tier, 2022-2024), which is not DGPT:
@@ -95,9 +151,9 @@ the layout description says UNVERIFIED, INVENTED.
 
 ## Hole shaping (doglegs, blockers, hazards)
 
-Every bundled course except Picnic Island was reshaped so that holes are not all straight tee-to-basket shots: doglegs
+Every bundled course except Picnic Island and Olympus was reshaped so that holes are not all straight tee-to-basket shots: doglegs
 (via points with trees filling the inside corner), S-curves, tall blocking trees, bush walls, a few ponds and out-of-bounds
 strips, tight tree tunnels. This is INVENTED shaping done by tools/shape_holes.py. It is not taken from the real
-courses: for Olympus and Cypress Point Park only the lengths, pars and approximate tee/basket positions stay as described
+courses: for Cypress Point Park only the lengths, pars and approximate tee/basket positions stay as described
 above (tee-to-basket distance and par are unchanged; the playing line is a few percent longer on doglegs), and the water,
-OB and bends there should not be read as real features. The four "inspired" courses were already invented.
+OB and bends there should not be read as real features. (Olympus was rebuilt separately, see its section.) The four "inspired" courses were already invented.
