@@ -46,7 +46,7 @@ def arm_dir(yaw, pitch, side):
     y = D(yaw); p = D(pitch)
     return Vector((-side * math.sin(y) * math.cos(p), -math.cos(y) * math.cos(p), -math.sin(p)))
 
-def two_bone_ik(arm, up, lo, foot_target, knee_fwd=True):
+def two_bone_ik(arm, up, lo, foot_target, knee_fwd=True, out=0.0):
     """Place thigh and shin so the ankle reaches foot_target; the knee bends toward the front."""
     hip = up.head.copy()
     L1 = (up.tail - up.head).length; L2 = (lo.tail - lo.head).length
@@ -56,7 +56,7 @@ def two_bone_ik(arm, up, lo, foot_target, knee_fwd=True):
     a = math.acos(max(-1, min(1, (L1 * L1 + dist * dist - L2 * L2) / (2 * L1 * dist))))
     side = to_n.cross(Vector((1, 0, 0)))  # axis to swing the thigh forward
     # thigh direction: rotate to_n toward the front by angle a
-    bend = Vector((0, -1, 0)) if knee_fwd else Vector((0, 1, 0))
+    bend = Vector((out, -1, 0)) if knee_fwd else Vector((0, 1, 0))   # out: lateral knee push (+X = left side)
     perp = (bend - to_n * bend.dot(to_n)).normalized()
     thigh = (to_n * math.cos(a) + perp * math.sin(a)).normalized()
     aim(up, thigh)
@@ -70,7 +70,7 @@ def pose(arm, P):
     # remember rest ankle positions
     footL = pb['Foot.L'].head.copy(); footR = pb['Foot.R'].head.copy()
     # crouch: lower the body, knees bend
-    drop = 0.18 * P['crouch']
+    drop = 0.22 * min(P["crouch"], 1.25)
     pb['Body'].location = (0, 0, 0)
     sh = P.get('shift', 0.0)
     drive = P.get('drive', 0.2 * sh)
@@ -103,13 +103,18 @@ def pose(arm, P):
     aim(pb['Wrist.L'], arm_dir(ly - 6 * tuck, lp + 4, -1))
     # legs: planted feet, lead foot steps toward the target
     step = P['step']; wide = P.get('wide', 0.0); stride = P.get('stride', 0.0); trail = P.get('trail', 0.0)
-    tL = footL + Vector((0.20 * wide, -0.30 * step - 0.20 * stride, 0.11 * math.sin(min(step, 1.0) * math.pi) + P.get('lZ', 0.0)))
+    # athletic stance: feet shoulder-width or wider (hip width 0.24 -> ~0.46 apart at address, ~0.7 in the charge)
+    sp = 0.15 + 0.11 * wide + 0.07 * min(step, 1.0)
     cross = P.get('cross', 0.0)
-    tR = footR + Vector((-0.12 * wide + 0.30 * cross, 0.14 * wide + 0.10 * trail + 0.12 * cross + P.get('rY', 0.0), 0.20 * trail + P.get('rZ', 0.0)))
-    two_bone_ik(arm, pb['UpperLeg.L'], pb['LowerLeg.L'], tL)
-    two_bone_ik(arm, pb['UpperLeg.R'], pb['LowerLeg.R'], tR)
+    tL = footL + Vector((sp, -0.18 * step - 0.10 * stride, 0.11 * math.sin(min(step, 1.0) * math.pi) + P.get('lZ', 0.0)))
+    tR = footR + Vector((-sp * (1.0 - 0.45 * trail) + 0.0 * cross, 0.14 * wide + 0.10 * trail + 0.05 * cross + P.get('rY', 0.0), 0.20 * trail + P.get('rZ', 0.0)))
+    ko = 1.1   # knees pushed outward over the toes
+    two_bone_ik(arm, pb['UpperLeg.L'], pb['LowerLeg.L'], tL, out=ko)
+    two_bone_ik(arm, pb['UpperLeg.R'], pb['LowerLeg.R'], tR, out=-ko)
     pb['Foot.L'].matrix = Matrix.Translation(tL - footL) @ pb['Foot.L'].matrix
     pb['Foot.R'].matrix = Matrix.Translation(tR - footR) @ pb['Foot.R'].matrix
+    for nm, sgn in (('Foot.L', 1), ('Foot.R', -1)):   # toes turned out ~18 degrees
+        rot_about(pb[nm], 'Z', sgn * D(18), pivot=pb[nm].head.copy())
     upd()
 
 def key(arm, frame):

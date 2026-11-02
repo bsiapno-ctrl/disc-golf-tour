@@ -1,7 +1,7 @@
 import sys; sys.path.insert(0,'.')
 from rig import *
 import os
-OUT = "/home/claude/wt/anim8/app/src/main/assets/characters"
+OUT = "/home/claude/wt/anim9/app/src/main/assets/characters"
 os.makedirs(OUT, exist_ok=True)
 chars = sys.argv[sys.argv.index("--")+1:] if "--" in sys.argv else sys.argv[1:]
 FPS = 30
