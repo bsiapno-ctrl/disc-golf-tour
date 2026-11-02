@@ -240,7 +240,7 @@ class GameRenderer(private val context: android.content.Context, private val ctl
                     k = 3.5f
                 }
             }
-            Phase.RESULT, Phase.HOLE_DONE -> {
+            Phase.RESULT, Phase.HOLE_DONE, Phase.OB_CHOICE -> {
                 val base = ctl.flight?.pos ?: ctl.lie
                 val d = Vec3(base.x - ctl.throwOrigin.x, 0f, base.z - ctl.throwOrigin.z).normalized()
                     .let { if (it == Vec3.ZERO) headingToDir(ctl.aimHeading) else it }

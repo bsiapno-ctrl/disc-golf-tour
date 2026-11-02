@@ -59,4 +59,24 @@ class HudLayoutTest {
             for ((n, rc) in L.all()) assertTrue("stepBar $B overlaps $n $rc at ${wDp}dp r=$ratio den=$den", !B.intersects(rc))
         }
     }
+
+    @Test fun obChoicePopupFitsAndButtonsDoNotOverlap() {
+        for (wDp in 640..2200 step 40) for (ratio in floatArrayOf(1.1f, 1.3f, 1.78f, 2.17f, 2.4f)) for (den in floatArrayOf(1f, 2f, 3f)) {
+            val w = wDp * den; val h = w / ratio
+            val d = HudLayout.scale(w, h, den)
+            val o = HudLayout.obChoice(w, h, d)
+            val L = HudLayout.compute(w, h, d)
+            val parts = listOf("banner" to o.banner, "lie" to o.lieBtn, "rethrow" to o.rethrowBtn)
+            for ((n, rc) in parts) {
+                assertTrue("$n $rc off screen", rc.l >= 0 && rc.t >= 0 && rc.r <= w && rc.b <= h)
+                if (n != "banner") assertTrue("$n too small for touch: $rc", rc.w >= 44 * d && rc.h >= 44 * d)
+                for (name in listOf("holeBanner", "scorePanel", "windPanel", "menu", "cardBtn", "distChip", "minimap")) {
+                    val other = L.all().firstOrNull { it.first == name }?.second ?: continue
+                    assertTrue("$n $rc overlaps $name $other at ${wDp}dp r=$ratio", !rc.intersects(other))
+                }
+            }
+            assertTrue("buttons overlap", !o.lieBtn.intersects(o.rethrowBtn))
+            assertTrue("banner overlaps buttons", !o.banner.intersects(o.lieBtn) && !o.banner.intersects(o.rethrowBtn))
+        }
+    }
 }

@@ -179,6 +179,11 @@ class HudView(context: Context, private val ctl: GameController) : View(context)
             Phase.RELEASE_ANGLE -> if (!stick.active && stick.hitsFixed(x, y)) stick.down(id, x, y, false) else onAction(true)
             Phase.RUNUP -> onAction(true)   // tap anywhere
             Phase.INTRO, Phase.RESULT, Phase.HOLE_DONE -> onAction(true)
+            Phase.OB_CHOICE -> {
+                val o = HudLayout.obChoice(width.toFloat(), height.toFloat(), d)
+                if (o.lieBtn.contains(x, y)) ctl.chooseOb(true)
+                else if (o.rethrowBtn.contains(x, y)) ctl.chooseOb(false)
+            }
             else -> Unit
         }
     }
@@ -329,6 +334,7 @@ class HudView(context: Context, private val ctl: GameController) : View(context)
         when (phase) {
             Phase.INTRO -> drawIntro(c, w, h)
             Phase.RESULT -> drawResult(c, w, h)
+            Phase.OB_CHOICE -> drawObChoice(c, w, h)
             Phase.HOLE_DONE -> drawHoleDone(c, w, h)
             else -> Unit
         }
@@ -461,7 +467,7 @@ class HudView(context: Context, private val ctl: GameController) : View(context)
     private fun drawScorePanel(c: Canvas, w: Float) {
         val b = L.scorePanel
         toon(c, b, 14 * d, Color.parseColor("#3C86E6"), Color.parseColor("#14439A"))
-        val throwNo = ctl.strokes + if (ctl.phase == Phase.HOLE_DONE || ctl.phase == Phase.RESULT) 0 else 1
+        val throwNo = ctl.strokes + if (ctl.phase == Phase.HOLE_DONE || ctl.phase == Phase.RESULT || ctl.phase == Phase.OB_CHOICE) 0 else 1
         val rel = ctl.relativeToPar()
         val relS = if (rel == 0) "E" else if (rel > 0) "+$rel" else "$rel"
         val relCol = if (rel < 0) Ui.GREEN else if (rel > 0) Ui.ORANGE else Ui.WHITE
@@ -868,6 +874,20 @@ class HudView(context: Context, private val ctl: GameController) : View(context)
             else -> ""
         }
         if (tag.isNotEmpty()) text(c, tag, w / 2f, r.top + 84 * d, 12f, Ui.GOLD, Paint.Align.CENTER, display = false)
+    }
+
+    private fun drawObChoice(c: Canvas, w: Float, h: Float) {
+        val o = HudLayout.obChoice(w, h, d)
+        r.set(o.banner.l, o.banner.t, o.banner.r, o.banner.b)
+        panel(c, r, 225, Ui.ORANGE)
+        text(c, "OUT OF BOUNDS +1", w / 2f, r.centerY() + 9 * d, 24f, Ui.ORANGE, Paint.Align.CENTER)
+        val items = listOf(Triple(o.lieBtn, "PLAY FROM LIE", ctl.obLieToPin), Triple(o.rethrowBtn, "RETHROW", ctl.obRethrowToPin))
+        for ((b, label, dist) in items) {
+            r.set(b.l, b.t, b.r, b.b)
+            panel(c, r, 235, Ui.GOLD)
+            text(c, label, r.centerX(), r.top + 38 * d, 20f, Ui.WHITE, Paint.Align.CENTER, maxW = r.width() - 12 * d)
+            text(c, "${dist.toInt()} m to pin", r.centerX(), r.top + 70 * d, 16f, Ui.GOLD, Paint.Align.CENTER, display = false, maxW = r.width() - 12 * d)
+        }
     }
 
     private fun drawHoleDone(c: Canvas, w: Float, h: Float) {

@@ -194,11 +194,13 @@ class GameActivity : Activity() {
             KeyEvent.KEYCODE_BUTTON_L1, KeyEvent.KEYCODE_Q -> { if (e.repeatCount == 0) ctl.nextDisc(-1); return true }
             KeyEvent.KEYCODE_BUTTON_R1, KeyEvent.KEYCODE_E -> { if (e.repeatCount == 0) ctl.nextDisc(1); return true }
             KeyEvent.KEYCODE_DPAD_LEFT -> {
-                if (fromPad(e)) { if (e.repeatCount == 0) ctl.nextDisc(-1) } else keyRelX = -1
+                if (ctl.phase == Phase.OB_CHOICE) { if (e.repeatCount == 0) ctl.chooseOb(true) }
+                else if (fromPad(e)) { if (e.repeatCount == 0) ctl.nextDisc(-1) } else keyRelX = -1
                 return true
             }
             KeyEvent.KEYCODE_DPAD_RIGHT -> {
-                if (fromPad(e)) { if (e.repeatCount == 0) ctl.nextDisc(1) } else keyRelX = 1
+                if (ctl.phase == Phase.OB_CHOICE) { if (e.repeatCount == 0) ctl.chooseOb(false) }
+                else if (fromPad(e)) { if (e.repeatCount == 0) ctl.nextDisc(1) } else keyRelX = 1
                 return true
             }
             KeyEvent.KEYCODE_DPAD_UP -> {

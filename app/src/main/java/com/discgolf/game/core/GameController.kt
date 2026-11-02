@@ -10,7 +10,7 @@ import kotlin.math.sin
 /**
  * The throw is three steps: POWER (hold, release to lock), RUNUP (tap to time the last step), RELEASE_ANGLE (tap to lock the angle).
  */
-enum class Phase { INTRO, AIMING, POWER, RUNUP, RELEASE_ANGLE, FLIGHT, RESULT, HOLE_DONE, ROUND_DONE;
+enum class Phase { INTRO, AIMING, POWER, RUNUP, RELEASE_ANGLE, FLIGHT, OB_CHOICE, RESULT, HOLE_DONE, ROUND_DONE;
     /** True during any of the three throw steps. */
     val isThrowStep: Boolean get() = this == POWER || this == RUNUP || this == RELEASE_ANGLE
 }
@@ -114,6 +114,13 @@ class GameController(
     private var puttAttempt = false
     private var preThrowPin = 0f
     private var preThrowLie = Vec3.ZERO
+    /** While [Phase.OB_CHOICE]: the last in-bounds point of the flight (play from lie) and the previous throwing spot (rethrow). */
+    var obLie: Vec3 = Vec3.ZERO
+        private set
+    var obRethrow: Vec3 = Vec3.ZERO
+        private set
+    val obLieToPin: Float get() = obLie.distanceXZ(hole.basket)
+    val obRethrowToPin: Float get() = obRethrow.distanceXZ(hole.basket)
     /** How far down the fairway the caddie aims. Grows with the golfer's reach. */
     private var lookAhead = 55f
     /** Aim-point distance down the hole (m), clamped to [MIN_AIM_DIST, MAX_AIM_DIST]. */
@@ -333,6 +340,8 @@ class GameController(
             strokes += 1
             title = if (splash) "WATER! +1 stroke" else "OUT OF BOUNDS! +1 stroke"
             lie = preThrowLie
+            obRethrow = preThrowLie
+            obLie = obLiePoint(hole, preThrowLie, end)
         } else {
             lie = end
             title = when {
@@ -382,10 +391,21 @@ class GameController(
         } else if (strokes >= hole.par + 5) {
             headline = "Pick up: max strokes"
             completeHole(f)
+        } else if (splash || oob) {
+            // Out of bounds (the +1 penalty is already counted): the player must pick lie or rethrow.
+            setPhase(Phase.OB_CHOICE)
         } else {
             prepareNextShot()
             setPhase(Phase.RESULT)
         }
+    }
+
+    /** Resolve [Phase.OB_CHOICE]: [fromLie] = play from where the disc went out, else rethrow from the previous spot. Both cost the +1 already added. */
+    fun chooseOb(fromLie: Boolean) {
+        if (phase != Phase.OB_CHOICE) return
+        lie = if (fromLie) obLie else obRethrow
+        prepareNextShot()
+        setPhase(Phase.AIMING)
     }
 
     private fun afterResult() {
@@ -579,6 +599,24 @@ class GameController(
     }
 
     companion object {
+        /**
+         * The last in-bounds point on the straight path [from] -> [end] before it first enters water / out of bounds,
+         * backed off a little toward [from] so the marker is on dry land. Returns [from] if the path starts out of bounds.
+         */
+        fun obLiePoint(hole: Hole, from: Vec3, end: Vec3): Vec3 {
+            fun ok(t: Float) = hole.surfaceAt(from.x + (end.x - from.x) * t, from.z + (end.z - from.z) * t).let { it != Surface.WATER && it != Surface.OUT_OF_BOUNDS }
+            val steps = 256
+            var bad = -1
+            for (i in 0..steps) if (!ok(i / steps.toFloat())) { bad = i; break }
+            if (bad <= 0) return hole.onGround(from.x, from.z)
+            var good = (bad - 1) / steps.toFloat(); var badT = bad / steps.toFloat()
+            repeat(14) { val m = (good + badT) / 2f; if (ok(m)) good = m else badT = m }
+            val total = from.distanceXZ(end)
+            val back = if (total > 1e-3f) min(1.0f / total, good) else 0f
+            val t = good - back
+            return hole.onGround(from.x + (end.x - from.x) * t, from.z + (end.z - from.z) * t)
+        }
+
         const val PUTT_RANGE = 20f
         const val MIN_AIM_DIST = 55f
         const val MAX_AIM_DIST = 120f

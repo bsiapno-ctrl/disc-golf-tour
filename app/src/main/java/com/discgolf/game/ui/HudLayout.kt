@@ -8,6 +8,7 @@ class HRect(val l: Float, val t: Float, val r: Float, val b: Float) {
     val w get() = r - l
     val h get() = b - t
     fun centerXf() = (l + r) / 2f
+    fun contains(x: Float, y: Float) = x >= l && x <= r && y >= t && y <= b
     fun intersects(o: HRect) = l < o.r && o.l < r && t < o.b && o.t < b
     override fun toString() = "[$l,$t,$r,$b]"
 }
@@ -26,6 +27,9 @@ class HudRects(
     )
 }
 
+/** Out-of-bounds popup: banner on top, PLAY FROM LIE (left) and RETHROW (right) below. */
+class ObRects(val banner: HRect, val lieBtn: HRect, val rethrowBtn: HRect)
+
 /** Pure layout for the in-game HUD. All sizes are design units times [d]. */
 object HudLayout {
     /** Same scale rule HudView has always used: design for 760 x 360 dp, clamp the zoom. */
@@ -35,6 +39,14 @@ object HudLayout {
     /** The "1 POWER - 2 RUN-UP - 3 RELEASE" step indicator, floating just above the swing dial's pin chip. */
     fun stepBar(meter: HRect, d: Float): HRect =
         HRect(meter.centerXf() - 88 * d, meter.t - 72 * d, meter.centerXf() + 68 * d, meter.t - 52 * d)
+
+    fun obChoice(w: Float, h: Float, d: Float): ObRects {
+        val cx = w / 2f; val top = h * 0.20f
+        val hw = min(150 * d, cx - 230 * d)   // stay clear of the side panels on narrow screens
+        val banner = HRect(cx - hw, top, cx + hw, top + 44 * d)
+        val by = banner.b + 8 * d
+        return ObRects(banner, HRect(cx - hw, by, cx - 4 * d, by + 96 * d), HRect(cx + 4 * d, by, cx + hw, by + 96 * d))
+    }
 
     fun compute(w: Float, h: Float, d: Float): HudRects {
         val acx = w - 82 * d; val acy = h - 100 * d; val ar = 64 * d

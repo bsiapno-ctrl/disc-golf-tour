@@ -183,6 +183,7 @@ class CoreTest {
                 Phase.RUNUP -> { g.update(dt); if (g.phase == Phase.RUNUP && g.meter!!.runupMarker >= ThrowTiming.RUNUP_CENTER) g.pressAction() }
                 Phase.RELEASE_ANGLE -> { g.update(dt); if (g.phase == Phase.RELEASE_ANGLE && g.meter!!.releaseMarker >= tapAt) g.pressAction() }
                 Phase.FLIGHT -> g.update(dt)
+                Phase.OB_CHOICE -> g.chooseOb(true)
                 Phase.ROUND_DONE -> {}
             }
         }
@@ -342,6 +343,7 @@ class CoreTest {
                 Phase.RUNUP -> { g.update(dt); if (g.phase == Phase.RUNUP && g.meter!!.runupMarker >= ThrowTiming.RUNUP_CENTER) g.pressAction() }
                 Phase.RELEASE_ANGLE -> { g.update(dt); if (g.phase == Phase.RELEASE_ANGLE && g.meter!!.releaseMarker >= 0.5f) g.pressAction() }
                 Phase.FLIGHT -> g.update(dt)
+                Phase.OB_CHOICE -> g.chooseOb(false)
                 Phase.ROUND_DONE -> {}
             }
         }
