@@ -27,7 +27,7 @@ import kotlin.math.min
  *
  * Controller layout:
  *   A / Space / right trigger ....... hold to charge power, release to lock it, press again to stop the accuracy marker
- *   Left stick or keyboard A/D ...... aim turn; stick up/down or W/S = aim distance; right stick / arrow keys = release angle (L/R hyzer/anhyzer) and nose tilt (U/D)
+ *   Left stick or keyboard A/D ...... aim turn; stick up/down or W/S = aim distance; the same stick in ANGLE mode (chip toggles; auto during the release step) / arrow keys = release angle (L/R hyzer/anhyzer) and nose tilt (U/D)
  *   D-pad left/right or L1/R1 ....... change disc
  *   D-pad up/down ................... change shot shape (hyzer / flat / anhyzer)
  *   Y ............................... scorecard        Start / B / Back ... pause

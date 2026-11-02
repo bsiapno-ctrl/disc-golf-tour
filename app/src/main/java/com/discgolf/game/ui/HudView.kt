@@ -47,15 +47,19 @@ class HudView(context: Context, private val ctl: GameController) : View(context)
     var showCard = false
 
     /** -1..1 aim stick command (0 when released). Read by the activity every frame. */
-    val touchAim: Float get() = stick.output
+    val touchAim: Float get() = if (angleMode) 0f else stick.output
     /** -1..1 aim-point command (stick up = further down the hole). */
-    val touchAimY: Float get() = stick.outputY
+    val touchAimY: Float get() = if (angleMode) 0f else stick.outputY
     private val stick = AimStick().also { it.labels = arrayOf("L", "R", "FAR", "NEAR"); it.accent = 0xFFFFD84A.toInt() }
-    /** Release stick: x = hyzer(-)/anhyzer(+), y = nose up(+)/down(-). */
-    private val relStick = AimStick().also { it.labels = arrayOf("HYZER", "ANHY", "NOSE UP", "DOWN"); it.accent = 0xFF6FE0FF.toInt() }
-    /** -1..1 release stick commands (x right = anhyzer, y up = nose up). */
-    val touchRelX: Float get() = relStick.output
-    val touchRelY: Float get() = relStick.outputY
+    /** The one stick has two modes: AIM (heading / distance) and ANGLE (hyzer-anhyzer / nose). ANGLE is forced during RELEASE_ANGLE. */
+    private var manualAngle = false
+    val angleMode: Boolean get() = ctl.phase == Phase.RELEASE_ANGLE || (manualAngle && ctl.phase == Phase.AIMING)
+    private val chipRect = RectF()
+    private val AIM_LABELS = arrayOf("L", "R", "FAR", "NEAR")
+    private val ANGLE_LABELS = arrayOf("HYZER", "ANHY", "NOSE UP", "DOWN")
+    /** -1..1 release commands from the same stick while in ANGLE mode (x right = anhyzer, y up = nose up). */
+    val touchRelX: Float get() = if (angleMode) stick.output else 0f
+    val touchRelY: Float get() = if (angleMode) stick.outputY else 0f
 
     private class Pop(val ev: ProgressEvent, var age: Float = 0f)
     private val pops = ArrayList<Pop>()
@@ -97,7 +101,7 @@ class HudView(context: Context, private val ctl: GameController) : View(context)
         L = HudLayout.compute(wf, hf, d)   // all panel rects come from this pure, unit-tested function
         actionC[0] = L.actionCx; actionC[1] = L.actionCy; actionC[2] = L.actionR
         stick.layout(70 * d, hf - 56 * d, 46 * d)
-        relStick.layout(L.relCx, L.relCy, L.relR)
+        chipRect.set(70 * d - 62 * d, hf - 122 * d, 70 * d + 62 * d, hf - 104 * d)
         cardRect.set(L.discCard.l, L.discCard.t, L.discCard.r, L.discCard.b)
         discPrev.set(cardRect.left, cardRect.top, cardRect.left + 40 * d, cardRect.bottom - 30 * d)
         discNext.set(cardRect.right - 40 * d, cardRect.top, cardRect.right, cardRect.bottom - 30 * d)
@@ -139,9 +143,9 @@ class HudView(context: Context, private val ctl: GameController) : View(context)
             MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN -> down(id, e.getX(idx), e.getY(idx))
             MotionEvent.ACTION_UP, MotionEvent.ACTION_POINTER_UP -> up(id)
             MotionEvent.ACTION_MOVE -> for (i in 0 until e.pointerCount) {
-                stick.move(e.getPointerId(i), e.getX(i), e.getY(i)); relStick.move(e.getPointerId(i), e.getX(i), e.getY(i))
+                stick.move(e.getPointerId(i), e.getX(i), e.getY(i))
             }
-            MotionEvent.ACTION_CANCEL -> { up(actionPointer); up(stick.pointer); up(relStick.pointer) }
+            MotionEvent.ACTION_CANCEL -> { up(actionPointer); up(stick.pointer) }
         }
         return true
     }
@@ -161,8 +165,8 @@ class HudView(context: Context, private val ctl: GameController) : View(context)
         when (ctl.phase) {
             Phase.AIMING -> {
                 when {
+                    chipRect.contains(x, y) -> manualAngle = !manualAngle
                     !stick.active && stick.hitsFixed(x, y) -> stick.down(id, x, y, false)
-                    !relStick.active && relStick.hitsFixed(x, y) -> relStick.down(id, x, y, false)
                     discPrev.contains(x, y) -> onDisc(-1)
                     discNext.contains(x, y) -> onDisc(1)
                     shapePrev.contains(x, y) -> onShape(-1)
@@ -172,7 +176,8 @@ class HudView(context: Context, private val ctl: GameController) : View(context)
                     x > width * 0.62f && y > height * 0.3f && actionPointer < 0 -> { actionPointer = id; onAction(true) }
                 }
             }
-            Phase.RUNUP, Phase.RELEASE_ANGLE -> onAction(true)   // tap anywhere
+            Phase.RELEASE_ANGLE -> if (!stick.active && stick.hitsFixed(x, y)) stick.down(id, x, y, false) else onAction(true)
+            Phase.RUNUP -> onAction(true)   // tap anywhere
             Phase.INTRO, Phase.RESULT, Phase.HOLE_DONE -> onAction(true)
             else -> Unit
         }
@@ -181,7 +186,7 @@ class HudView(context: Context, private val ctl: GameController) : View(context)
     private fun up(id: Int) {
         if (id < 0) return
         if (id == actionPointer) { actionPointer = -1; onAction(false) }
-        stick.up(id); relStick.up(id)
+        stick.up(id)
     }
 
     // ------------------------------------------------------------------
@@ -659,14 +664,22 @@ class HudView(context: Context, private val ctl: GameController) : View(context)
 
     private fun drawAimButtons(c: Canvas) {
         val on = ctl.phase == Phase.AIMING
-        stick.draw(c, p, d, on)
-        relStick.draw(c, p, d, on)
-        // live readouts above each stick
-        val sy = stick.cy - stick.radius - 8 * d
-        text(c, String.format("H %+.0f°  V %.0fm", ctl.aimOffsetDeg, ctl.aimDistance), stick.cx, sy, 12f, Ui.GOLD, Paint.Align.CENTER, display = false)
+        val ang = angleMode
+        stick.labels = if (ang) ANGLE_LABELS else AIM_LABELS
+        stick.accent = if (ang) 0xFF6FE0FF.toInt() else 0xFFFFD84A.toInt()
+        stick.draw(c, p, d, on || ctl.phase == Phase.RELEASE_ANGLE)
+        // mode chip (tap toggles AIM / ANGLE) with the live readout of the active mode
+        val col = if (ang) Ui.CYAN else Ui.GOLD
+        p.style = Paint.Style.FILL; p.color = 0xCC061028.toInt()
+        c.drawRoundRect(chipRect, 9 * d, 9 * d, p)
+        p.style = Paint.Style.STROKE; p.strokeWidth = 2f * d; p.color = col
+        c.drawRoundRect(chipRect, 9 * d, 9 * d, p)
+        p.style = Paint.Style.FILL
         val tilt = ctl.releaseTiltDeg
         val tl = if (tilt > 0.5f) String.format("HYZ %.0f°", tilt) else if (tilt < -0.5f) String.format("ANHY %.0f°", -tilt) else "FLAT"
-        text(c, tl + String.format("  NOSE %.0f°", ctl.launchAngleDeg), relStick.cx, relStick.cy - relStick.radius - 8 * d, 12f, Ui.CYAN, Paint.Align.CENTER, display = false, maxW = 112 * d)
+        val s = if (ang) tl + String.format(" NOSE %.0f°", ctl.launchAngleDeg)
+                else String.format("H %+.0f° %.0fm", ctl.aimOffsetDeg, ctl.aimDistance)
+        text(c, (if (ang) "ANGLE " else "AIM ") + s, chipRect.centerX(), chipRect.centerY() + 4 * d, 11f, col, Paint.Align.CENTER, display = false, maxW = chipRect.width() - 6 * d)
     }
 
     // (4) Hot Shots style swing dial: power ring fills clockwise, inner arc holds the accuracy needle, glossy cap shows % power
