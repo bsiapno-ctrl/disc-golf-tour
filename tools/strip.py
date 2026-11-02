@@ -28,10 +28,10 @@ camd = bpy.data.cameras.new('c'); cam = bpy.data.objects.new('c', camd); sc.coll
 def look(cam, loc, tgt):
     cam.location = loc; d = Vector(tgt) - Vector(loc)
     cam.rotation_euler = d.to_track_quat('-Z', 'Y').to_euler()
-VIEWS = {'game': ((-1.9, 3.7, 1.7), (0, -0.4, 0.95), 'PERSP'), 'top': ((0, -0.3, 6.0), (0, -0.3, 0), 'ORTHO'), 'side': ((-4.5, -0.2, 1.2), (0, -0.2, 0.95), 'PERSP')}
+VIEWS = {'game': ((-1.4, 2.7, 1.45), (0, -0.4, 0.95), 'PERSP'), 'top': ((0, -0.3, 6.0), (0, -0.3, 0), 'ORTHO'), 'side': ((-4.5, -0.2, 1.2), (0, -0.2, 0.95), 'PERSP')}
 Ps, rel = frames_of(clip)
 idx = list(range(len(Ps))) if len(Ps) <= 12 else [round(i * (len(Ps) - 1) / 11) for i in range(12)]
-if rel is not None and clip.startswith('Throw'): idx = [0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 21]
+if rel is not None and clip.startswith('Throw'): idx = [0, 3, 6, 8, 10, 12, 14, 16, 17, 18, 19, 20, 21][:12] if False else [0, 3, 6, 8, 10, 12, 14, 16, 18, 19, 20, 21]
 for view in views:
     loc, tgt, kind = VIEWS[view]; look(cam, loc, tgt)
     camd.type = kind
