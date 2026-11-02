@@ -472,7 +472,7 @@ class HudView(context: Context, private val ctl: GameController) : View(context)
         // elevation chip: basket height minus lie height
         val e = L.elevChip
         toon(c, e, 9 * d, Color.parseColor("#3C86E6"), Color.parseColor("#14439A"))
-        text(c, HudLayout.elevText(ctl.elevationToPin), e.centerX(), e.centerY() + 4 * d, 11f, Ui.WHITE, Paint.Align.CENTER, display = false, maxW = e.width() - 6 * d)
+        text(c, HudLayout.elevText(ctl.elevationToPin), e.centerXf(), (e.t + e.b) / 2f + 4 * d, 11f, Ui.WHITE, Paint.Align.CENTER, display = false, maxW = e.w - 6 * d)
     }
 
     // (5) strokes / par / total-vs-par panel
