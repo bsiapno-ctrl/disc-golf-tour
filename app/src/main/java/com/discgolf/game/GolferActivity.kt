@@ -333,7 +333,7 @@ class GolferActivity : Activity() {
 
     private fun buildBag(col: LinearLayout) {
         col.addView(sectionTitle("Your bag").apply { setPadding(0, dp(8f), 0, dp(3f)) })
-        for (d in DiscModel.values()) {
+        for (d in DiscModel.values().sortedWith(compareBy({ DiscModel.kindOrder.indexOf(it.kind) }, { it.speed }, { it.unlockLevel }))) {
             val have = d.unlockLevel <= p.level
             val line = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
             val dot = View(this).apply {
@@ -344,7 +344,7 @@ class GolferActivity : Activity() {
             }
             line.addView(dot, LinearLayout.LayoutParams(dp(12f), dp(12f)).apply { rightMargin = dp(6f) })
             val nums = "${d.speed} | ${d.glide} | ${d.turn.toInt()} | ${d.fade.toInt()}"
-            val txt = if (have) "${d.displayName}  (${d.kind})   $nums" else "${d.displayName}  — unlocks at level ${d.unlockLevel}"
+            val txt = if (have) "${d.displayName}  (${d.kind}, ${d.stability.lowercase()})   $nums" else "${d.displayName}  — unlocks at level ${d.unlockLevel}"
             line.addView(lbl(txt, 11f, if (have) Ui.WHITE else Ui.METAL))
             col.addView(line, LinearLayout.LayoutParams(-2, -2).apply { bottomMargin = dp(3f) })
         }

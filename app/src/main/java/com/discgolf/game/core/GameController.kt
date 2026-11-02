@@ -168,9 +168,29 @@ class GameController(
         dirty = true
     }
 
+    /** Picker type filter: null = whole bag, otherwise one of [DiscModel.kindOrder]. */
+    var discFilter: String? = null
+
+    /** Cycle the picker filter: ALL -> Putter -> Midrange -> Fairway -> Distance -> ALL. Keeps the current disc if it fits. */
+    fun cycleDiscFilter() {
+        if (phase != Phase.AIMING) return
+        val order = listOf<String?>(null) + DiscModel.kindOrder
+        discFilter = order[(order.indexOf(discFilter) + 1) % order.size]
+        val f = discFilter
+        if (f != null && disc.kind != f) DiscModel.ofKind(f, profile.level).firstOrNull()?.let { disc = it }
+        dirty = true
+    }
+
+    /** The discs the arrows step through: the filtered group (slowest first) or the whole bag grouped by type. */
+    fun pickerDiscs(): List<DiscModel> {
+        val f = discFilter
+        if (f != null) return DiscModel.ofKind(f, profile.level)
+        return DiscModel.kindOrder.flatMap { DiscModel.ofKind(it, profile.level) }
+    }
+
     fun nextDisc(dir: Int) {
         if (phase != Phase.AIMING) return
-        val b = bag
+        val b = pickerDiscs().ifEmpty { bag }
         val i = b.indexOf(disc).let { if (it < 0) 0 else it }
         disc = b[(i + dir + b.size) % b.size]
         dirty = true
@@ -487,7 +507,7 @@ class GameController(
         val windEnv = WindOnly(wind, hole.terrain)
         var reach = 0f
         for (d in bag) {
-            if (d == DiscModel.DART) continue
+            if (d.isPutter) continue
             reach = max(reach, Launcher.carry(profile, ThrowSpec(lie, 0f, d, ShotShape.FLAT, false, forehand), windEnv, 1f))
         }
         lookAhead = clamp(reach * 0.8f, MIN_AIM_DIST, MAX_AIM_DIST)
@@ -506,7 +526,7 @@ class GameController(
             var bestCarry = -1f
             var pick: DiscModel? = null
             for (d in b) {
-                if (d == DiscModel.DART) continue
+                if (d.isPutter) continue
                 val c = Launcher.carry(profile, ThrowSpec(lie, aimHeading, d, ShotShape.FLAT, false, forehand), windEnv, 1f)
                 if (c > bestCarry) { bestCarry = c; best = d }
                 // Prefer the slowest disc that still gets there.
@@ -568,7 +588,7 @@ class GameController(
     private fun refreshGuide() {
         dirty = false
         distanceToPin = lie.distanceXZ(hole.basket)
-        isPutt = disc == DiscModel.DART && distanceToPin <= PUTT_RANGE
+        isPutt = disc.isPutter && distanceToPin <= PUTT_RANGE
         val windEnv = WindOnly(wind, hole.terrain)
         // The guide aims for the pin when it is the target; otherwise it shows the line at the power
         // needed to reach the aim spot.
