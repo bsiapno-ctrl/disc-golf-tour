@@ -111,7 +111,7 @@ void main() {
             float up01 = smoothstep(0.0, h, ray.y);
             float shade = 0.80 + 0.30 * up01;   // lighter toward the ridge top
             // Forest texture: speckled canopy that darkens in clumps, sunlit on the ridge, fading with distance (layer 0 is mostly mist).
-            float forest = vnoise(vec2(az * (55.0 + 25.0 * fk), ray.y * (85.0 + 35.0 * fk)));
+            float forest = vnoise(vec2(az * (34.0 + 16.0 * fk), ray.y * (60.0 + 24.0 * fk))) * 0.65 + vnoise(vec2(az * (90.0 + 30.0 * fk), ray.y * (130.0 + 40.0 * fk))) * 0.35;
             float clump = fbm(vec2(az * 14.0 + fk * 5.0, ray.y * 22.0));
             shade *= 1.0 + (forest - 0.5) * (0.10 + 0.10 * fk) + (clump - 0.5) * 0.16;
             rc = mix(rc, horizon, 0.46 - 0.16 * fk - 0.10 * up01);   // mist, thicker far away and low down
@@ -140,6 +140,17 @@ void main() {
     // Two tree lines in front of the hills: rows of round treetops (scallops of varied size), the far row hazier and paler.
     if (ray.y < 0.16) {
         float az = atan(ray.x, ray.z);
+        // Far conifers: patches of pointed spruce tops beyond the round trees, hazy and blue-green.
+        float cs = az * 120.0;
+        float ids = floor(cs);
+        float fs = fract(cs) * 2.0 - 1.0;
+        float bigs = 0.4 + 0.6 * hash(vec2(ids, 21.0));
+        float spike = (0.004 + 0.020 * bigs) * pow(max(1.0 - abs(fs), 0.0), 1.4);
+        float hs = 0.026 + 0.012 * (fbm(vec2(az * 3.0 + 9.0, 4.0)) - 0.3) + spike;
+        float es = smoothstep(hs + 0.0012, hs - 0.0012, ray.y);
+        float conMask = smoothstep(0.45, 0.60, fbm(vec2(az * 2.2 + 3.0, 8.0)));
+        vec3 conCol = mix(vec3(0.14, 0.38, 0.32), horizon, 0.36) * (0.76 + 0.42 * smoothstep(0.0, hs, ray.y));
+        col = mix(col, conCol, es * conMask * (ray.y > -0.02 ? 1.0 : 0.0));
         for (int t = 0; t < 2; t++) {
             float ft = float(t);
             float cells = az * (95.0 - 35.0 * ft);

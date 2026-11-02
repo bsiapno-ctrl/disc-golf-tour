@@ -22,8 +22,8 @@ class TreeMeshData(val vertices: FloatArray, val indices: ShortArray)
  * The tree is 1 unit tall, standing at the origin; the caller scales it by the tree's height.
  */
 object PuffyTreeGen {
-    /** Species: 0-3 round oaks, 4 tall oval (birch), 5 pine, 6 palm. */
-    const val SEEDS = 7
+    /** Species: 0-3 round oaks, 4 tall oval (birch), 5 pine, 6 palm, 7 round shrub, 8 tall slim spruce. */
+    const val SEEDS = 9
 
     private class Rng(var s: Int) {
         fun next(): Float { s = s * 1664525 + 1013904223; return ((s ushr 8) and 0xFFFFFF) / 16777216f }
@@ -171,8 +171,10 @@ object PuffyTreeGen {
         val smallSub = if (detail >= 1) 1 else 0
         val lean = rnd.range(-0.03f, 0.03f)
         when (seed) {
-            5 -> pine(b, rnd, detail, sides)
+            5 -> pine(b, rnd, detail, sides, false)
+            8 -> pine(b, rnd, detail, sides, true)
             6 -> palm(b, rnd, detail, sides)
+            7 -> shrub(b, rnd, detail, sides)
             4 -> {
                 val cc = floatArrayOf(lean, 0.66f, lean * 0.5f)
                 trunk(b, lean, 0.62f, 0.040f, sides)
@@ -225,16 +227,17 @@ object PuffyTreeGen {
     }
 
     /** Conifer: a tapering trunk and stacked tiers of drooping, flattened needle-clumps. */
-    private fun pine(b: Builder, rnd: Rng, detail: Int, sides: Int) {
+    private fun pine(b: Builder, rnd: Rng, detail: Int, sides: Int, slim: Boolean) {
+        val wide = if (slim) 0.68f else 1f
         val cc = floatArrayOf(0f, 0.55f, 0f)
         tube(b, 0f, -0.02f, 0f, 0f, 0.30f, 0f, 0.045f, 0.030f, sides, 0.10f, 0.30f, 0.1f)
         tube(b, 0f, 0.30f, 0f, 0f, 0.92f, 0f, 0.030f, 0.008f, sides, 0.30f, 0.60f, 0.2f)
         val sub = if (detail >= 1) 1 else 0
-        val tiers = if (detail >= 2) 8 else 6
+        val tiers = (if (detail >= 2) 8 else 6) + (if (slim) 2 else 0)
         for (t in 0 until tiers) {
             val f = t.toFloat() / (tiers - 1)
             val y = 0.17f + 0.70f * f
-            val reach = 0.30f * (1f - 0.80f * f) + 0.04f
+            val reach = (0.30f * (1f - 0.80f * f) + 0.04f) * wide
             val n = if (f < 0.4f) 7 else if (f < 0.75f) 5 else 4
             val a0 = rnd.range(0f, 6.28f)
             for (k in 0 until n) {
@@ -246,6 +249,25 @@ object PuffyTreeGen {
             blob(b, 0f, y + 0.02f, 0f, reach * 0.42f, 0.06f, reach * 0.42f, 0f, 0f, cc, sub, rnd, 0.02f + 0.10f * f, 0.8f, 0.10f)
         }
         blob(b, 0f, 0.97f, 0f, 0.035f, 0.075f, 0.035f, 0f, 0f, cc, sub, rnd, 0.15f, 0.9f, 0.05f)
+    }
+
+    /** Shrub: a low, wide mound of leaf puffs with a hint of stem, about 0.8 tall; the caller scales it to a bush. */
+    private fun shrub(b: Builder, rnd: Rng, detail: Int, sides: Int) {
+        val cc = floatArrayOf(0f, 0.30f, 0f)
+        val bigSub = when (detail) { 2 -> 2; 1 -> 1; else -> 0 }
+        tube(b, 0f, -0.02f, 0f, 0f, 0.12f, 0f, 0.030f, 0.020f, if (sides > 5) 6 else 4, 0.10f, 0.30f, 0.1f)
+        blob(b, 0f, 0.28f, 0f, 0.36f, 0.26f, 0.36f, 0f, 0f, cc, bigSub, rnd, 0.0f, 0.62f, 0.08f)
+        val a0 = rnd.range(0f, 6.28f)
+        for (k in 0 until 5) {
+            val a = a0 + k * 6.283f / 5f + rnd.range(-0.2f, 0.2f)
+            val d = rnd.range(0.24f, 0.32f); val r = rnd.range(0.17f, 0.23f)
+            blob(b, cos(a) * d, rnd.range(0.16f, 0.26f), sin(a) * d, r, r * 0.82f, r, 0f, 0f, cc, bigSub, rnd, -0.04f, 0.62f, 0.08f)
+        }
+        for (k in 0 until 2) {
+            val a = a0 + 1.3f + k * 3.1f
+            blob(b, cos(a) * 0.10f, rnd.range(0.38f, 0.44f), sin(a) * 0.10f, 0.17f, 0.14f, 0.17f, 0f, 0f, cc, bigSub, rnd, 0.08f, 0.62f, 0.08f)
+        }
+        if (detail >= 1) clusters(b, cc, 0.42f, 0.30f, if (detail >= 2) 12 else 6, 0.07f, 0.11f, 1, rnd, -0.1f)
     }
 
     /** Palm: a curved, ringed trunk topped by a rosette of long drooping fronds. */

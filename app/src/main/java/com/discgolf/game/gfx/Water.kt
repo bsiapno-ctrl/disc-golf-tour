@@ -105,6 +105,35 @@ void main() {
     // Bright caustic lines.
     float caus = pow(0.5 + 0.5 * sin((w.x + 1.3 * vnoise(w * 0.8 + t * 0.2)) * 2.6) * sin((w.y + 1.3 * vnoise(w * 0.8 - t * 0.2 + 7.0)) * 2.6), 6.0);
     col += vec3(0.5, 0.9, 0.8) * caus * 0.12 * (1.0 - depth * 0.4);
+    // The pond floor shows through near the bank: warmer, greener shallows.
+    float shoreZone = smoothstep(0.52, 0.90, r);
+    col = mix(col, vec3(0.50, 0.84, 0.58), shoreZone * 0.38);
+    // Lily pads: round green discs with a notch, scattered near the bank, now and then with a pink flower.
+    {
+        vec2 lc = w * 1.15 + uSeed * 3.7;
+        vec2 li = floor(lc), lf = fract(lc) - 0.5;
+        float lh = hash(li + 13.0);
+        vec2 off = (vec2(hash(li + 2.0), hash(li + 9.0)) - 0.5) * 0.45;
+        vec2 q = lf - off;
+        float rad = 0.17 + 0.09 * hash(li + 5.0);
+        float lr = length(q);
+        float notch = step(0.16, abs(atan(q.y, q.x) - (hash(li + 7.0) * 6.28 - 3.14)) ) ;
+        float zone = smoothstep(0.50, 0.62, r) * (1.0 - smoothstep(0.84, 0.90, r));
+        float pad = step(0.80, lh) * (1.0 - smoothstep(rad - 0.015, rad, lr)) * mix(1.0, notch, step(lr, rad * 0.95)) * zone * (1.0 - smoothstep(30.0, 90.0, dist));
+        vec3 padc = mix(vec3(0.16, 0.50, 0.22), vec3(0.34, 0.74, 0.28), smoothstep(-0.1, 0.12, q.y + 0.05 * sin(lr * 40.0)));
+        col = mix(col, padc, pad * 0.95);
+        float flower = step(0.93, lh) * (1.0 - smoothstep(0.035, 0.06, length(q - off * 0.0))) * zone * (1.0 - smoothstep(30.0, 90.0, dist));
+        col = mix(col, vec3(1.0, 0.62, 0.78), flower);
+    }
+    // Slow ring ripples spreading from random spots.
+    {
+        vec2 rc = w * 0.30;
+        vec2 ri = floor(rc), rf = fract(rc);
+        float ph = fract(t * 0.18 + hash(ri + 3.3));
+        vec2 ctr = vec2(hash(ri + 1.1), hash(ri + 8.8)) * 0.6 + 0.2;
+        float ring = (1.0 - smoothstep(0.0, 0.025, abs(length(rf - ctr) - ph * 0.28))) * (1.0 - ph) * step(0.45, hash(ri + 4.4));
+        col += vec3(0.55, 0.75, 0.80) * ring * 0.30 * (1.0 - smoothstep(30.0, 90.0, dist));
+    }
     // Sky reflection at grazing angles.
     float fres = pow(1.0 - max(dot(n, v), 0.0), 3.0);
     col = mix(col, vec3($HORIZON_R, $HORIZON_G, $HORIZON_B) * 1.02, clamp(fres * 0.85, 0.0, 0.7));

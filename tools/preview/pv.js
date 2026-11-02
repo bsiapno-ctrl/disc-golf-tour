@@ -145,19 +145,25 @@ const hole = JSON.parse(fs.readFileSync(`hole${holeNum}.json`));
       const tms = treeMeshes.map(m => { const vao=gl.createVertexArray(); gl.bindVertexArray(vao); const b1=gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER,b1); gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(m.v),gl.STATIC_DRAW);
         const b2=gl.createBuffer(); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,b2); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER,new Uint16Array(m.i),gl.STATIC_DRAW); for(let a=0;a<3;a++){ gl.enableVertexAttribArray(a); gl.vertexAttribPointer(a,3,gl.FLOAT,false,36,a*12);} return {vao,n:m.i.length}; });
       const PLD=[[0.08,0.38,0.16],[0.16,0.38,0.10],[0.88,0.50,0.66],[0.84,0.38,0.14],[0.06,0.30,0.17],[0.10,0.46,0.16]], PLL=[[0.62,0.95,0.26],[0.80,0.94,0.28],[1.0,0.78,0.88],[1.0,0.80,0.34],[0.42,0.78,0.34],[0.70,0.96,0.30]], BD=[[0.30,0.20,0.13],[0.52,0.52,0.50]], BL=[[0.70,0.52,0.34],[0.97,0.96,0.92]];
-      const species=(idx,variant,nearWater)=>{ if(nearWater&&idx%2==0) return 6|(5<<4); const oak=idx%4;
-        if(variant==2) return oak|((idx%2==0?2:3)<<4); if(variant==0) return idx%3==0 ? 5|(4<<4) : oak|((idx%5==1?1:0)<<4);
-        if(idx%2==0) return 4|((idx%3==0?1:0)<<4)|(1<<8); return ((idx>>1)%4)|((idx%7==1?1:0)<<4); };
+      const species=(idx,variant,nearWater)=>{ if(nearWater&&idx%2==0) return 6|(5<<4); const oak=idx%4; const spruce=8|(4<<4);
+        if(variant==2) return oak|((idx%2==0?2:3)<<4); if(variant==0) return idx%3==0 ? (idx%2==0 ? 5|(4<<4) : spruce) : oak|((idx%5==1?1:0)<<4);
+        if(idx%13==5) return spruce; if(idx%2==0) return 4|((idx%3==0?1:0)<<4)|(1<<8); return ((idx>>1)%4)|((idx%7==1?1:0)<<4); };
+      const hJit=(idx,seed)=>(0.80+((idx*29)%41)/100)*(idx%17==3?1.22:1)*(seed==8?1.12:1), wJit=(idx,seed)=>(0.88+((idx*53)%25)/100)*(idx%17==3?1.15:1)*(seed==8?0.80:seed==5?0.85:1);
       gl.useProgram(pt); gl.uniform3f(U(pt,'uLightDir'),...sun); gl.uniform3f(U(pt,'uCamPos'),...eye); gl.uniform3f(U(pt,'uFogColor'),0.80,0.89,0.95); gl.uniform1f(U(pt,'uTime'),clockT);
       hole.trees.forEach((t,idx)=>{ const [x,y0,z,ht,cr,vr]=t; const dx=x-eye[0], dz=z-eye[2]; const d2=dx*dx+dz*dz; if (d2>380*380) return;
         const nearWater=hole.ponds.some(([cx,cz,rx,rz])=>{const a=(x-cx)/(rx+7),b=(z-cz)/(rz+7);return a*a+b*b<1;});
         const sp=species(idx,vr,nearWater); const seed=sp&15;
-        const sc=ht*0.95*(seed==6?0.8:1), wd=seed==5?0.85:Math.min(Math.max(cr/2.3,0.85),1.25); const dist=Math.sqrt(d2); const det=dist<42?2:dist<120?1:0; const tint=0.90+((idx*37)%30)/100;
+        const sc=ht*0.95*(seed==6?0.8:1)*hJit(idx,seed), wd=((seed==5||seed==8)?1:Math.min(Math.max(cr/2.3,0.85),1.25))*wJit(idx,seed); const dist=Math.sqrt(d2); const det=dist<42?2:dist<120?1:0; const tint=0.90+((idx*37)%30)/100;
         const M=mat.mul(mat.trs(x,y0-0.1,z,1,1,1), mat.mul(rotY((idx*83)%360), mat.trs(0,0,0,sc*wd,sc,sc*wd)));
         const kind=(sp>>4)&15, birch=(sp>>8)==1?1:0;
         gl.uniform3fv(U(pt,'uLeafDark'),PLD[kind]); gl.uniform3fv(U(pt,'uLeafLight'),PLL[kind]); gl.uniform3fv(U(pt,'uBarkDark'),BD[birch]); gl.uniform3fv(U(pt,'uBarkLight'),BL[birch]);
         gl.uniformMatrix4fv(U(pt,'uMVP'),false,mat.mul(vp,M)); gl.uniformMatrix4fv(U(pt,'uModel'),false,M); gl.uniform3f(U(pt,'uTint'),tint,tint,tint); gl.uniform1f(U(pt,'uLean'),0.03);
         const m=tms[seed*3+det]; gl.bindVertexArray(m.vao); gl.drawElements(gl.TRIANGLES,m.n,gl.UNSIGNED_SHORT,0); });
+      for (const d of hole.decor) { if (d[0]!='@shrub') continue; const dx=d[1]-eye[0], dz=d[3]-eye[2]; const d2=dx*dx+dz*dz; if (d2>140*140) continue; const sc=d[4]; const dist=Math.sqrt(d2)*1.6; const det=dist<42?2:dist<120?1:0;
+        const M=mat.mul(mat.trs(d[1],d[2]-0.04,d[3],1,1,1), mat.mul(rotY(d[5]), mat.trs(0,0,0,sc*1.15,sc,sc*1.15))); const kind=d[8];
+        gl.uniform3fv(U(pt,'uLeafDark'),PLD[kind]); gl.uniform3fv(U(pt,'uLeafLight'),PLL[kind]); gl.uniform3fv(U(pt,'uBarkDark'),BD[0]); gl.uniform3fv(U(pt,'uBarkLight'),BL[0]);
+        gl.uniformMatrix4fv(U(pt,'uMVP'),false,mat.mul(vp,M)); gl.uniformMatrix4fv(U(pt,'uModel'),false,M); gl.uniform3f(U(pt,'uTint'),d[6],d[6],d[6]); gl.uniform1f(U(pt,'uLean'),0.02);
+        const m=tms[7*3+det]; gl.bindVertexArray(m.vao); gl.drawElements(gl.TRIANGLES,m.n,gl.UNSIGNED_SHORT,0); }
       useModelShader(); }
     for (const d of hole.decor) { const m = models[d[0]]; if(!m) continue; const dx=d[1]-eye[0], dz=d[3]-eye[2]; if (dx*dx+dz*dz>160*160) continue; drawModel(m, trsM(d[1],d[2]-0.02,d[3],d[5],d[4]), d[6], 0.05); }
     // near grass (same hash grid as the game)
@@ -239,7 +245,43 @@ const hole = JSON.parse(fs.readFileSync(`hole${holeNum}.json`));
     }
 
     gl.useProgram(main); gl.uniform3f(U(main,'uLightDir'),...sun); gl.uniform3f(U(main,'uCamPos'),...eye); gl.uniform3f(U(main,'uFogColor'),0.80,0.89,0.95); gl.uniform1f(U(main,'uStripe'),0); gl.uniform1f(U(main,'uEmissive'),0);
-    const bk=hole.basket; drawM(cyl, mat.trs(bk[0],bk[1],bk[2],0.035,1.4,0.035), 0.7,0.72,0.76); drawM(cyl, mat.trs(bk[0]+0.7,bk[1],bk[2],0.02,3.4,0.02), 0.9,0.9,0.9); drawM(cyl, mat.trs(bk[0],bk[1]+0.55,bk[2],0.3,0.4,0.3), 0.6,0.62,0.66);
+    const cube = (()=>{ const v=[],ix=[]; const F=[[1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1]]; for(const n of F){ const u=n[0]?[0,1,0]:[1,0,0]; const w=[n[1]*u[2]-n[2]*u[1], n[2]*u[0]-n[0]*u[2], n[0]*u[1]-n[1]*u[0]]; const b=v.length/6; for(const [s,t] of [[-1,-1],[1,-1],[1,1],[-1,1]]) v.push(0.5*(n[0]+s*u[0]+t*w[0]),0.5*(n[1]+s*u[1]+t*w[1]),0.5*(n[2]+s*u[2]+t*w[2]),n[0],n[1],n[2]); ix.push(b,b+1,b+2,b,b+2,b+3,b,b+2,b+1,b,b+3,b+2);} return mkMesh(v,ix); })();
+    const torus = (r0=1,tube=0.03)=>{ const v=[],ix=[]; const S=28,T=8; for(let a=0;a<=S;a++){ const A=a/S*Math.PI*2; for(let b=0;b<=T;b++){ const B=b/T*Math.PI*2; const cx=Math.cos(A),sz=Math.sin(A); const rr=r0+tube*Math.cos(B); v.push(rr*cx,tube*Math.sin(B),rr*sz, Math.cos(B)*cx,Math.sin(B),Math.cos(B)*sz); } } for(let a=0;a<S;a++) for(let b=0;b<T;b++){ const p=a*(T+1)+b,q=p+T+1; ix.push(p,q,p+1,p+1,q,q+1);} return mkMesh(v,ix); };
+    const ringThin = torus(1,0.03);
+    const xf = (x,y,z,sx,sy,sz,ry=0) => mat.mul(mat.trs(x,y,z,1,1,1), mat.mul(rotY(ry), mat.trs(0,0,0,sx,sy,sz)));
+    const clock = clockT;
+    // ---- tee pad extras, rocks, marker posts, stakes (port of GameRenderer.drawGround / drawScenery)
+    { const t=hole.tee, p0=hole.path[0], p1=hole.path[1]; const fl=Math.hypot(p1[0]-p0[0],p1[1]-p0[1]); const ux=(p1[0]-p0[0])/fl, uz=(p1[1]-p0[1])/fl, rx=uz, rz=-ux; const dir0=Math.atan2(ux,uz)*180/Math.PI;
+      drawM(cube, xf(t[0],t[1]+0.015,t[2],1.55,0.05,2.85,dir0), 0.40,0.29,0.17); drawM(cube, xf(t[0],t[1]+0.03,t[2],1.28,0.05,2.58,dir0), 0.30,0.38,0.33); drawM(cube, xf(t[0],t[1]+0.056,t[2],1.28,0.004,0.10,dir0), 0.92,0.92,0.88);
+      for (const sd of [-1,1]) { drawM(cube, xf(t[0]+rx*0.40*sd,t[1]+0.056,t[2]+rz*0.40*sd,0.14,0.004,2.30,dir0), 0.36,0.45,0.39);
+        for (const en of [-1,1]) { const cx=t[0]+rx*0.78*sd+ux*1.43*en, cz=t[2]+rz*0.78*sd+uz*1.43*en, cy=hAt(cx,cz); drawM(cyl, xf(cx,cy,cz,0.065,0.20,0.065), 0.36,0.26,0.15); drawM(sph, xf(cx,cy+0.21,cz,0.07,0.045,0.07), 0.50,0.37,0.22); }
+        const mx=t[0]+ux*1.22+rx*0.72*sd, mz=t[2]+uz*1.22+rz*0.72*sd, my=hAt(mx,mz); drawM(cyl, xf(mx,my,mz,0.07,0.05,0.07), 0.40,0.29,0.17); drawM(sph, xf(mx,my+0.12,mz,0.11,0.10,0.11), 0.97,0.97,0.95); }
+      const sx=t[0]+rx*1.35-ux*0.4, sz=t[2]+rz*1.35-uz*0.4, sy=hAt(sx,sz); drawM(cyl, xf(sx,sy,sz,0.035,0.80,0.035), 0.36,0.26,0.15); drawM(cube, xf(sx,sy+0.92,sz,0.56,0.32,0.04,dir0+180), 0.93,0.92,0.86); drawM(cube, xf(sx,sy+1.10,sz,0.62,0.035,0.10,dir0+180), 0.40,0.29,0.17); drawM(cube, xf(sx,sy+0.98,sz,0.5,0.10,0.045,dir0+180), 0.20,0.45,0.80);
+    }
+    const ROCK=[[0.54,0.52,0.47],[0.58,0.54,0.47],[0.45,0.49,0.54]];
+    for (const d of hole.decor) { const [nm,x,y,z,sc,rot,tint,lie,kind]=d; if (nm[0]!='@' || nm=='@shrub') continue; const dx=x-eye[0], dz=z-eye[2]; const d2=dx*dx+dz*dz; if (d2>110*110) continue;
+      if (nm=='@rock') { const T=ROCK[kind%3], c=tint, r=T[0]*c, g=T[1]*c, b=T[2]*c;
+        drawM(cyl, xf(x,y+0.012,z,sc*1.25,0.01,sc*1.45,rot), 0.13,0.24,0.09);
+        drawM(sph, xf(x,y+0.12*sc,z,sc,sc*0.62,sc*1.2,rot), r,g,b); drawM(sph, xf(x+0.45*sc,y+0.05*sc,z+0.2*sc,sc*0.55,sc*0.4,sc*0.6,rot), r*1.1,g*1.08,b*1.04); drawM(sph, xf(x-0.30*sc,y+0.04*sc,z-0.35*sc,sc*0.45,sc*0.32,sc*0.48,rot), r*0.88,g*0.88,b*0.86);
+        drawM(sph, xf(x+0.18*sc,y+0.17*sc,z+0.1*sc,sc*0.42,sc*0.30,sc*0.60,rot), r*1.22,g*1.2,b*1.14); drawM(sph, xf(x-0.05*sc,y+0.27*sc,z,sc*0.62,sc*0.17,sc*1.05,rot), 0.30,0.52,0.20); }
+      else if (nm=='@sign') { drawM(cyl, xf(x,y-0.05,z,0.045,0.86,0.045), 0.40,0.29,0.17); drawM(cube, xf(x,y+1.02,z,0.50,0.30,0.05,rot), 0.93,0.92,0.86); const bc=kind==0?[0.20,0.45,0.80]:[0.92,0.52,0.14]; drawM(cube, xf(x,y+1.11,z,0.44,0.09,0.055,rot), ...bc); drawM(cube, xf(x,y+0.95,z,0.30,0.045,0.055,rot), 0.30,0.30,0.34); drawM(cube, xf(x,y+1.19,z,0.56,0.03,0.10,rot), 0.40,0.29,0.17); drawM(sph, xf(x,y+1.26,z,0.05,0.05,0.05), 0.95,0.93,0.85); }
+      else if (nm=='@stake') { drawM(cyl, xf(x,y-0.05,z,0.03,0.80,0.03), 0.80,0.74,0.58); drawM(cyl, xf(x,y+0.60,z,0.034,0.16,0.034), 0.90,0.16,0.14); } }
+    // ---- basket (port of GameRenderer.drawBasket)
+    { const bk=hole.basket, b={x:bk[0],y:bk[1],z:bk[2]}, y=b.y; const steel=0.74, dark=0.30;
+      drawM(cyl, xf(b.x,y+0.005,b.z,0.42,0.02,0.42), 0.62,0.58,0.46); drawM(cyl, xf(b.x,y+0.015,b.z,0.26,0.05,0.26), dark,dark+0.02,dark+0.05);
+      drawM(cyl, xf(b.x,y,b.z,0.050,0.30,0.050), 0.62,0.64,0.68); drawM(cyl, xf(b.x,y,b.z,0.035,1.45,0.035), steel,steel+0.02,steel+0.06);
+      drawM(cyl, xf(b.x,y+0.55,b.z,0.31,0.03,0.31), 0.52,0.55,0.60); drawM(ringThin, xf(b.x,y+0.58,b.z,0.31,0.8,0.31), 0.80,0.82,0.86);
+      for (let k=0;k<3;k++){ const a=2*Math.PI*k/3+0.5; drawM(cyl, xf(b.x+Math.cos(a)*0.16,y+0.46,b.z+Math.sin(a)*0.16,0.010,0.14,0.010), 0.62,0.64,0.68); }
+      for (let k=0;k<12;k++){ const a=2*Math.PI*k/12; drawM(cyl, xf(b.x+Math.cos(a)*0.30,y+0.60,b.z+Math.sin(a)*0.30,0.0085,0.78,0.0085), 0.86,0.87,0.90); }
+      for (let k=0;k<8;k++){ const a=2*Math.PI*(k+0.5)/8; drawM(cyl, xf(b.x+Math.cos(a)*0.15,y+0.82,b.z+Math.sin(a)*0.15,0.0075,0.56,0.0075), 0.78,0.79,0.83); }
+      drawM(ringThin, xf(b.x,y+1.0,b.z,0.22,1,0.22), 0.80,0.82,0.86); drawM(ringThin, xf(b.x,y+1.38,b.z,0.335,2.2,0.335), 0.98,0.78,0.10); drawM(ringThin, xf(b.x,y+1.46,b.z,0.335,1,0.335), 0.80,0.82,0.86); drawM(cone, xf(b.x,y+1.44,b.z,0.30,0.10,0.30), 0.98,0.78,0.10);
+      drawM(cyl, xf(b.x,y+0.006,b.z,0.55,0.01,0.55), 0.12,0.26,0.10); drawM(ringThin, xf(b.x,y+0.03,b.z,1.15,0.5,1.15), 1.0,0.92,0.45);
+      for (let k=0;k<6;k++){ const a=2*Math.PI*k/6; drawM(cyl, xf(b.x+Math.cos(a)*0.26,y+1.40,b.z+Math.sin(a)*0.26,0.008,0.07,0.008), 0.86,0.87,0.90); }
+      const pa=hole.path[hole.path.length-2]; let ax=b.x-pa[0], az=b.z-pa[1]; const al=Math.max(Math.hypot(ax,az),0.01); ax/=al; az/=al; const rx=az, rz=-ax, headA=Math.atan2(ax,az)*180/Math.PI;
+      const fx=b.x+rx*0.75, fz=b.z+rz*0.75; drawM(cyl, xf(fx,y,fz,0.022,3.4,0.022), 0.92,0.92,0.92); drawM(cyl, xf(fx,y+2.55,fz,0.026,0.28,0.026), 0.90,0.20,0.16); drawM(cyl, xf(fx,y+0.40,fz,0.026,0.22,0.026), 0.90,0.20,0.16); drawM(sph, xf(fx,y+3.44,fz,0.06,0.06,0.06), 1.0,0.82,0.20);
+      drawM(ringThin, xf(b.x,y+0.03,b.z,1.40,0.35,1.40), 1.0,1.0,0.90);
+      for (let i=0;i<7;i++){ const f=i/6, hgt=0.40*(1-0.62*f), wave=Math.sin(clock*3.2-i*0.9)*0.045*(0.3+f), off=0.06+i*0.085, top=y+3.34, sh=1-0.18*f, st=(i%4==3)?1:0;
+        drawM(cube, xf(fx+rx*off+ax*wave,top-hgt*0.5-0.04*f,fz+rz*off+az*wave,0.09,hgt,0.012,headA), 1.0*sh,(0.40+0.20*st)*sh,0.12*sh+0.35*st); } }
     // water
     gl.enable(gl.BLEND); gl.blendFuncSeparate(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA,gl.ZERO,gl.ONE); gl.depthMask(false);
     const disc = (()=>{ const v=[0,0,0,0,1,0], i=[]; const s=40; for(let k=0;k<s;k++){ const a=k/s*Math.PI*2; v.push(Math.cos(a),0,Math.sin(a),0,1,0);} for(let k=0;k<s;k++) i.push(0,1+(k+1)%s,1+k); return mkMesh(v,i); })();
